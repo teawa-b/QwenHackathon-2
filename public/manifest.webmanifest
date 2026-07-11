@@ -1,0 +1,12 @@
+{
+  "name": "SupplySwarm",
+  "short_name": "SupplySwarm",
+  "description": "A society of procurement agents for small businesses.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07110e",
+  "theme_color": "#b8f632",
+  "icons": [
+    { "src": "/swarm-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
