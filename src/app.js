@@ -126,6 +126,7 @@ function briefView() {
           <button data-example="podcast">Podcast room · £5k</button>
         </div>
         <button class="assemble" data-start><span>ASSEMBLE MY SWARM</span><b>↗</b></button>
+        <button class="assemble xr-launch" data-start-3d><span>ENTER 3D OPS ROOM · VR</span><b>◈</b></button>
         <p class="fineprint">No purchases or supplier messages are sent. Every consequential action requires your approval.</p>
       </div>
     </section>
@@ -235,6 +236,7 @@ function bindBrief() {
     document.querySelector('#idea').value = copy[btn.dataset.example];
   }));
   document.querySelector('[data-start]').addEventListener('click', () => { parseBrief(document.querySelector('#idea').value); runSwarm(); });
+  document.querySelector('[data-start-3d]').addEventListener('click', () => { parseBrief(document.querySelector('#idea').value); runSwarm3D(); });
   document.querySelector('[data-about]').addEventListener('click', showAbout);
 }
 
@@ -246,10 +248,10 @@ function showAbout() {
   dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
 }
 
-async function runSwarm() {
-  if (state.running) return; state.running = true; app.innerHTML = workspaceView(); window.scrollTo(0, 0);
-  document.querySelector('[data-about]').addEventListener('click', showAbout);
-  const events = [
+const PHASE_NAMES = ['VALIDATING BRIEF', 'SPAWNING SPECIALISTS', 'SOURCING CANDIDATES', 'VERIFYING SUPPLIERS', 'CALCULATING LANDED COST', 'CRITIC REVIEW', 'REVISING PACKAGE', 'FINAL VERIFICATION', 'COMPLETE'];
+
+function buildEvents() {
+  return [
     ['Coordinator', 'Structured brief validated. No blocking questions.', 8],
     [state.scenario.agents[0][1], `Searching ${state.scenario.items[0][0].toLowerCase()} candidates.`, 20],
     [state.scenario.agents[1][1], 'Rejected 9 listings with incompatible specifications.', 34],
@@ -260,7 +262,20 @@ async function runSwarm() {
     ['Critic', 'All essentials covered. Evidence and uncertainty labels verified.', 96],
     ['Coordinator', 'Package approved. Preparing your launch plan.', 100]
   ];
-  const phaseNames = ['VALIDATING BRIEF', 'SPAWNING SPECIALISTS', 'SOURCING CANDIDATES', 'VERIFYING SUPPLIERS', 'CALCULATING LANDED COST', 'CRITIC REVIEW', 'REVISING PACKAGE', 'FINAL VERIFICATION', 'COMPLETE'];
+}
+
+function showResults() {
+  state.running = false;
+  app.innerHTML = resultsView(); window.scrollTo(0, 0);
+  document.querySelectorAll('[data-restart]').forEach(b => b.addEventListener('click', showBrief));
+  document.querySelector('[data-about]').addEventListener('click', showAbout);
+}
+
+async function runSwarm() {
+  if (state.running) return; state.running = true; app.innerHTML = workspaceView(); window.scrollTo(0, 0);
+  document.querySelector('[data-about]').addEventListener('click', showAbout);
+  const events = buildEvents();
+  const phaseNames = PHASE_NAMES;
   for (let i = 0; i < events.length; i++) {
     const [who, text, progress] = events[i];
     if (i < state.scenario.agents.length) {
@@ -274,8 +289,72 @@ async function runSwarm() {
     document.querySelector('#progress-bar').style.width = `${progress}%`; document.querySelector('#progress-value').textContent = `${String(progress).padStart(2, '0')}%`;
     await new Promise(resolve => setTimeout(resolve, 620));
   }
-  await new Promise(resolve => setTimeout(resolve, 500)); app.innerHTML = resultsView(); window.scrollTo(0, 0);
-  document.querySelectorAll('[data-restart]').forEach(b => b.addEventListener('click', showBrief)); document.querySelector('[data-about]').addEventListener('click', showAbout);
+  await new Promise(resolve => setTimeout(resolve, 500)); showResults();
+}
+
+async function runSwarm3D() {
+  if (state.running) return; state.running = true;
+  const s = state.scenario;
+  app.innerHTML = `${header()}
+    <main class="xr-shell">
+      <div class="xr-canvas" id="xr-canvas"></div>
+      <div class="xr-hud">
+        <div class="xr-hud-top">
+          <div class="xr-brief"><span>3D OPS ROOM</span><strong>${s.type}</strong><em>${state.city} · ${money(state.budget)} ceiling</em></div>
+          <div class="xr-hud-buttons">
+            <button class="xr-btn" id="xr-vr" hidden>ENTER VR</button>
+            <button class="xr-btn ghost" id="xr-back">EXIT 3D</button>
+          </div>
+        </div>
+        <div class="xr-hud-bottom">
+          <div class="xr-phase"><i id="xr-progress"></i><span id="xr-phase-label">INITIALISING ROOM</span></div>
+          <div class="xr-feed" id="xr-feed" aria-live="polite"></div>
+          <button class="xr-btn done" id="xr-results" hidden>VIEW LAUNCH PLAN ↗</button>
+        </div>
+      </div>
+      <p class="xr-hint">Drag to orbit · pinch or scroll to zoom${'xr' in navigator ? ' · headset users can enter VR' : ''}</p>
+    </main>`;
+  window.scrollTo(0, 0);
+  document.querySelector('[data-about]').addEventListener('click', showAbout);
+
+  const { launchOpsRoom } = await import('./xr-room.js');
+  const room = launchOpsRoom({
+    container: document.querySelector('#xr-canvas'),
+    scenario: s,
+    brief: { type: s.type, budget: state.budget, city: state.city, team: state.team },
+    events: buildEvents(),
+    phaseNames: PHASE_NAMES,
+    money,
+    onComplete: () => {
+      const btn = document.querySelector('#xr-results');
+      if (btn) { btn.hidden = false; }
+    },
+    onExit: null
+  });
+
+  room.callbacks.onEvent = ({ who, text, progress, phase }) => {
+    const feed = document.querySelector('#xr-feed');
+    if (!feed) return;
+    const row = document.createElement('div');
+    row.className = `xr-event ${/critic/i.test(who) ? 'warning' : ''}`;
+    row.innerHTML = `<b>${who}</b><p>${text}</p>`;
+    feed.prepend(row);
+    while (feed.children.length > 3) feed.lastChild.remove();
+    document.querySelector('#xr-phase-label').textContent = phase;
+    document.querySelector('#xr-progress').style.width = `${progress}%`;
+  };
+  room.callbacks.onXRError = () => {
+    const vrBtn = document.querySelector('#xr-vr');
+    if (vrBtn) { vrBtn.textContent = 'VR UNAVAILABLE'; vrBtn.disabled = true; }
+  };
+
+  if (await room.vrSupported()) {
+    const vrBtn = document.querySelector('#xr-vr');
+    vrBtn.hidden = false;
+    vrBtn.addEventListener('click', () => room.enterVR());
+  }
+  document.querySelector('#xr-results').addEventListener('click', () => { room.dispose(); showResults(); });
+  document.querySelector('#xr-back').addEventListener('click', () => { room.dispose(); showBrief(); });
 }
 
 showBrief();
