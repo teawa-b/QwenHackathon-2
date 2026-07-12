@@ -117,7 +117,7 @@ const api = {
   image(payload) { return this.request('/api/image', payload); }
 };
 
-function modeLabel() { return api.live ? 'LIVE · QWEN CLOUD' : 'DEMO CATALOGUE'; }
+function modeLabel() { return api.live ? 'Live · Qwen Cloud' : 'Demo catalogue'; }
 
 function applyPlan(plan) {
   state.plan = plan;
@@ -135,7 +135,7 @@ function money(value) {
 
 function header() {
   return `<header class="topbar">
-    <a class="brand" href="#" aria-label="SupplySwarm home"><span class="brand-mark"><i></i><i></i><i></i></span><span>SUPPLY<em>SWARM</em></span></a>
+    <a class="brand" href="#" aria-label="SupplySwarm home"><span class="brand-mark"><i></i><i></i><i></i></span><span>Supply<em>Swarm</em></span></a>
     <div class="mode"><span></span> <b data-mode-label>${modeLabel()}</b></div>
     <button class="menu" aria-label="About SupplySwarm" data-about>?</button>
   </header>`;
@@ -161,7 +161,7 @@ function briefView() {
         <div class="signal signal-a">£</div><div class="signal signal-b">✓</div><div class="signal signal-c">⌁</div>
       </div>
       <div class="prompt-area">
-        <div class="prompt-label"><span class="live-dot"></span> MAIN ROBOT // READY</div>
+        <div class="prompt-label"><span class="live-dot"></span> Coordinator online</div>
         <label for="idea">What business are you building?</label>
         <div class="input-wrap">
           <textarea id="idea" rows="3" maxlength="280" placeholder="Tell us what you're building, where, your budget, and roughly how many people it needs to support."></textarea>
@@ -172,15 +172,15 @@ function briefView() {
           <button data-example="gym">Small gym · £15k</button>
           <button data-example="podcast">Podcast room · £5k</button>
         </div>
-        <button class="assemble" data-start><span>ASSEMBLE MY SWARM</span><b>↗</b></button>
-        <button class="assemble xr-launch" data-start-3d><span>ENTER 3D OPS ROOM · VR</span><b>◈</b></button>
+        <button class="assemble" data-start><span>Assemble my swarm</span><b>↗</b></button>
+        <button class="assemble xr-launch" data-start-3d><span>Enter the 3D ops room · VR</span><b>◈</b></button>
         <p class="fineprint">No purchases or supplier messages are sent. Every consequential action requires your approval.</p>
         <a class="pair-link" href="/connect">Have a session code from a VR headset? <b>Pair this device →</b></a>
       </div>
     </section>
     <section class="proof-strip">
       <div><b>06</b><span>Specialist agents</span></div><div><b>01</b><span>Shared budget</span></div><div><b>100%</b><span>Evidence labelled</span></div>
-      <p>Powered by <strong>QWEN CLOUD</strong><br><span data-live-copy>${api.live ? 'Live planning · Qwen speech recognition' : 'Demo catalogue · add a Qwen key for live voice'}</span></p>
+      <p>Powered by <strong>Qwen Cloud</strong><br><span data-live-copy>${api.live ? 'Live planning · Qwen speech recognition' : 'Demo catalogue · add a Qwen key for live voice'}</span></p>
     </section>
   </main>`;
 }
@@ -268,7 +268,7 @@ function resultsView() {
         </div>
       </section>
       <section class="concept">
-        <div><span class="label">CONCEPT VISUAL</span><h2>See your business.</h2><p>Qwen can generate an illustrative concept image of the finished space. Illustrative only — not a floor plan.</p><button class="secondary" data-generate-image>GENERATE CONCEPT IMAGE</button></div>
+        <div><span class="label">CONCEPT VISUAL</span><h2>See your business.</h2><p>Qwen can generate an illustrative concept image of the finished space. Illustrative only — not a floor plan.</p><button class="secondary" data-generate-image>Generate concept image</button></div>
         <figure class="concept-frame" data-concept>${state.conceptImage ? `<img src="${state.conceptImage}" alt="AI concept visual of the business">` : '<span>No image generated yet</span>'}</figure>
       </section>`
     : `<section class="evaluation">
@@ -283,7 +283,7 @@ function resultsView() {
     </section>
     <section class="result-grid">
       <div class="package-card">
-        <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div><button data-restart>NEW BRIEF</button></div>
+        <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div><button data-restart>New brief</button></div>
         <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[5] ? `<a href="${item[5]}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a>` : item[0]}</h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span>${item[5] ? '<span class="tag-link">ALIBABA.COM</span>' : ''}</div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
       </div>
       <aside class="cost-card">
@@ -295,7 +295,7 @@ function resultsView() {
       </aside>
     </section>
     ${insight}
-    <section class="result-actions"><button class="secondary" onclick="window.print()">PRINT REPORT</button><button class="primary" data-restart>START ANOTHER PLAN <b>↗</b></button></section>
+    <section class="result-actions"><button class="secondary" onclick="window.print()">Print report</button><button class="primary" data-restart><span>Start another plan</span><b>↗</b></button></section>
   </main>`;
 }
 
@@ -484,7 +484,7 @@ async function generateConceptImage(event) {
   const button = event.currentTarget;
   const frame = document.querySelector('[data-concept]');
   if (!frame || button.disabled) return;
-  button.disabled = true; button.textContent = 'GENERATING…';
+  button.disabled = true; button.textContent = 'Generating…';
   frame.innerHTML = '<span class="generating">Qwen is rendering your concept…</span>';
   try {
     const { url } = await api.image({
@@ -494,10 +494,10 @@ async function generateConceptImage(event) {
     });
     state.conceptImage = url;
     frame.innerHTML = `<img src="${url}" alt="AI concept visual of the business">`;
-    button.textContent = 'REGENERATE IMAGE';
+    button.textContent = 'Regenerate image';
   } catch (err) {
     frame.innerHTML = `<span>Image generation failed: ${err.message}</span>`;
-    button.textContent = 'TRY AGAIN';
+    button.textContent = 'Try again';
   } finally {
     button.disabled = false;
   }
@@ -595,13 +595,13 @@ async function runSwarm3D() {
       <div class="xr-canvas" id="xr-canvas"></div>
       <div class="xr-hud">
         <div class="xr-hud-top">
-          <div class="xr-brief"><span>3D OPS ROOM</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em>
-            <button class="xr-code" id="xr-code" hidden title="Enter this code at /connect on your phone to watch and steer the swarm">PHONE LINK <b id="xr-code-value"></b><span>${window.location.host}/connect</span></button>
+          <div class="xr-brief"><span>3D ops room</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em>
+            <button class="xr-code" id="xr-code" hidden title="Enter this code at /connect on your phone to watch and steer the swarm">Phone link <b id="xr-code-value"></b><span>${window.location.host}/connect</span></button>
           </div>
           <div class="xr-hud-buttons">
-            <button class="xr-btn" id="xr-ar" hidden>PASSTHROUGH AR</button>
-            <button class="xr-btn" id="xr-vr" hidden>ENTER VR</button>
-            <button class="xr-btn ghost" id="xr-back">EXIT 3D</button>
+            <button class="xr-btn" id="xr-ar" hidden>Passthrough AR</button>
+            <button class="xr-btn" id="xr-vr" hidden>Enter VR</button>
+            <button class="xr-btn ghost" id="xr-back">Exit 3D</button>
           </div>
         </div>
         <div class="xr-hud-bottom">
@@ -609,9 +609,9 @@ async function runSwarm3D() {
           <div class="xr-feed" id="xr-feed" aria-live="polite"></div>
           <div class="xr-ask" id="xr-ask">
             <input id="xr-idea" maxlength="280" autocomplete="off" placeholder="Or type: a small gym in Birmingham with a £15,000 budget…">
-            <button id="xr-go" aria-label="Assemble the swarm">GO ↗</button>
+            <button id="xr-go" aria-label="Assemble the swarm">Send ↗</button>
           </div>
-          <button class="xr-btn done" id="xr-results" hidden>VIEW LAUNCH PLAN ↗</button>
+          <button class="xr-btn done" id="xr-results" hidden>View launch plan ↗</button>
         </div>
       </div>
       <p class="xr-hint">Hold the centre robot to talk · tap any robot to inspect it · drag to orbit · scroll to zoom</p>
@@ -633,7 +633,7 @@ async function runSwarm3D() {
         try {
           await navigator.clipboard.writeText(`${window.location.origin}/connect/${code}`);
           const original = value.textContent;
-          value.textContent = 'COPIED';
+          value.textContent = 'Copied';
           setTimeout(() => { value.textContent = original; }, 1200);
         } catch {}
       };
@@ -683,7 +683,7 @@ async function runSwarm3D() {
   };
   room.callbacks.onXRError = () => {
     const vrBtn = document.querySelector('#xr-vr');
-    if (vrBtn) { vrBtn.textContent = 'VR UNAVAILABLE'; vrBtn.disabled = true; }
+    if (vrBtn) { vrBtn.textContent = 'VR unavailable'; vrBtn.disabled = true; }
   };
 
   const setHudBrief = (label) => {
