@@ -595,6 +595,7 @@ async function runSwarm3D() {
         <div class="xr-hud-top">
           <div class="xr-brief"><span>3D OPS ROOM</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em></div>
           <div class="xr-hud-buttons">
+            <button class="xr-btn" id="xr-ar" hidden>PASSTHROUGH AR</button>
             <button class="xr-btn" id="xr-vr" hidden>ENTER VR</button>
             <button class="xr-btn ghost" id="xr-back">EXIT 3D</button>
           </div>
@@ -742,10 +743,16 @@ async function runSwarm3D() {
     await finishVoiceBrief();
   };
 
-  if (await room.vrSupported()) {
+  const [vrOK, arOK] = await Promise.all([room.vrSupported(), room.arSupported()]);
+  if (vrOK) {
     const vrBtn = document.querySelector('#xr-vr');
     vrBtn.hidden = false;
     vrBtn.addEventListener('click', () => room.enterVR());
+  }
+  if (arOK) {
+    const arBtn = document.querySelector('#xr-ar');
+    arBtn.hidden = false;
+    arBtn.addEventListener('click', () => room.enterAR());
   }
   document.querySelector('#xr-results').addEventListener('click', () => { room.dispose(); showResults(); });
 }

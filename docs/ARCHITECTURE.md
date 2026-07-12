@@ -83,9 +83,10 @@ Landed cost (shipping, VAT/duties, contingency), budget validation, share normal
 | Voice briefs (hold-to-talk, desktop + VR controller) | `qwen3-asr-flash` (browser re-encodes to 22.05 kHz mono WAV) | `qwen.js: transcribe` |
 | Concept image of the finished business | `qwen-image-2.0-pro` | `qwen.js: generateImage` |
 
-## 3D / VR ops room (src/xr-room.js)
+## 3D / VR / passthrough-AR ops room (src/xr-room.js)
 
-Three.js scene, lazy-loaded; WebXR `immersive-vr` on Quest-class devices.
+Three.js scene, lazy-loaded; WebXR `immersive-vr` **and** `immersive-ar` on Quest-class devices.
+- **Passthrough AR with surface detection** — the AR session requests `hit-test` (required) plus `plane-detection` and `anchors` (optional). The camera feed shows through (`alpha` renderer, background/fog dropped, virtual floor hidden); a reticle tracks real surfaces via per-frame hit-test poses; the first trigger pull decomposes the hit pose and sets a 0.42-scale miniature of the entire ops room onto the detected floor/desk, auto-rotated to face the viewer. All scene content lives in a single `world` group, so placement is one transform and every behaviour below works identically in AR, VR and desktop. Implemented with native WebXR APIs — the same features XR Blocks' `World` module wraps — with zero added dependencies.
 - Robots **beam in when they first speak** and *act out* the event stream: the speaker **walks toward whoever it addresses**, faces them, shows a **speech bubble** with the actual message, and fires a message pulse along an agent-to-agent line; the listener nods.
 - Between events, agents surface **thought bubbles** (dashed, italic) containing their **genuine Qwen reasoning steps** returned by each specialist call — the swarm's thinking is visualised, not decorated.
 - **Interactive**: tap any robot (or point a VR controller and pull the trigger) to inspect it — it turns to you and reports its role, sourced lines and spend. Hold the centre Coordinator to speak your brief.
