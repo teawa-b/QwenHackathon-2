@@ -12,8 +12,13 @@ flowchart TB
         MIC[Hold-to-talk mic<br/>WebM→WAV re-encode in browser]
     end
 
+    subgraph Phone [Companion phone — /connect]
+        CC[Connect-code dashboard<br/>agent bubbles · inspect · requests · PDF report]
+    end
+
     subgraph Server [Express — server/]
         API[/api/plan · /api/transcribe · /api/image/]
+        WS[live.js — WebSocket session hub<br/>connect codes · snapshots · request relay]
         PL[planner.js — agent society orchestrator]
         QW[qwen.js — Qwen Cloud client]
     end
@@ -28,7 +33,13 @@ flowchart TB
     MIC --> API --> ASR
     UI & XR --> API --> PL --> QW
     QW --> TXT & SRCH & IMG
+    XR <-->|host: state broadcast| WS
+    CC <-->|companion: watch + requests| WS
 ```
+
+## Connect-code companion (server/live.js, src/connect.js)
+
+The 3D/VR room registers as a **host** over WebSocket and receives a 5-letter code (unambiguous alphabet, no 0/O/1/I). Phones join at `/connect` as **companions**: the server holds a per-session snapshot (brief, agents with their Qwen reasoning, dialogue events, plan, concept image, requests) so late joiners and reconnects catch up instantly, then relays every host update live. Companions send **requests** addressed to a specific agent or the Hub; the server fans them out to the host — where the target robot turns to the viewer and shows the message as an orange bubble — and echoes them to every other companion. Hardening: payload caps, JSON validation, unknown message types dropped (never rebroadcast), 8 companions/session, 200 sessions, 2 h TTL with a 5-minute host-reconnect grace, 30 s keepalive pings. The companion's **PDF report** (jspdf, lazy-loaded chunk) embeds the concept image via a server-side proxy locked to DashScope's OSS host, avoiding canvas tainting without loosening CORS.
 
 ## The agent society (server/planner.js)
 
@@ -104,9 +115,14 @@ Three.js scene, lazy-loaded; WebXR `immersive-vr` **and** `immersive-ar` on Ques
 server/qwen.js      Qwen Cloud client: chat-JSON, chat-JSON+web-search, ASR, image
 server/planner.js   Agent society: coordinator → parallel specialists+control →
                     negotiation → landed cost → critic; scoring & event stream
-server/index.js     Express routes, static hosting, error envelope
-src/app.js          Views (brief/ops/results), voice recorder, API client
-src/xr-room.js      Three.js/WebXR room: bots, dialogue acting, thoughts, inspect
+server/live.js      WebSocket hub: connect codes, session snapshots, request relay
+server/index.js     Express routes, image proxy, static hosting, error envelope
+src/app.js          Views (brief/ops/results), voice recorder, API client, routing
+src/xr-room.js      Three.js/WebXR room: bots, dialogue acting, thoughts, inspect,
+                    passthrough AR placement, phone-request bubbles
+src/live.js         WebSocket client links (host + companion, auto-reconnect)
+src/connect.js      /connect companion dashboard (lazy-loaded chunk)
+src/pdf.js          Branded PDF report via jspdf (lazy-loaded chunk)
 ```
 
 ## Scaling & productisation

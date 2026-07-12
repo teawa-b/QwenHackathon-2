@@ -1,4 +1,5 @@
 import './style.css';
+import { createHostLink } from './live.js';
 
 const scenarios = {
   studio: {
@@ -174,6 +175,7 @@ function briefView() {
         <button class="assemble" data-start><span>ASSEMBLE MY SWARM</span><b>↗</b></button>
         <button class="assemble xr-launch" data-start-3d><span>ENTER 3D OPS ROOM · VR</span><b>◈</b></button>
         <p class="fineprint">No purchases or supplier messages are sent. Every consequential action requires your approval.</p>
+        <a class="pair-link" href="/connect">Have a session code from a VR headset? <b>Pair this device →</b></a>
       </div>
     </section>
     <section class="proof-strip">
@@ -593,7 +595,9 @@ async function runSwarm3D() {
       <div class="xr-canvas" id="xr-canvas"></div>
       <div class="xr-hud">
         <div class="xr-hud-top">
-          <div class="xr-brief"><span>3D OPS ROOM</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em></div>
+          <div class="xr-brief"><span>3D OPS ROOM</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em>
+            <button class="xr-code" id="xr-code" hidden title="Enter this code at /connect on your phone to watch and steer the swarm">PHONE LINK <b id="xr-code-value"></b><span>${window.location.host}/connect</span></button>
+          </div>
           <div class="xr-hud-buttons">
             <button class="xr-btn" id="xr-ar" hidden>PASSTHROUGH AR</button>
             <button class="xr-btn" id="xr-vr" hidden>ENTER VR</button>
@@ -615,7 +619,39 @@ async function runSwarm3D() {
   window.scrollTo(0, 0);
   document.querySelector('[data-about]').addEventListener('click', showAbout);
   let room = null;
-  document.querySelector('#xr-back').addEventListener('click', () => { room?.dispose(); showBrief(); });
+
+  // Companion link: a phone at /connect can pair with this session's code to
+  // watch every agent live and send requests into the room.
+  const live = createHostLink();
+  live.onCode = code => {
+    const chip = document.querySelector('#xr-code');
+    const value = document.querySelector('#xr-code-value');
+    if (chip && value) {
+      value.textContent = code;
+      chip.hidden = false;
+      chip.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(`${window.location.origin}/connect/${code}`);
+          const original = value.textContent;
+          value.textContent = 'COPIED';
+          setTimeout(() => { value.textContent = original; }, 1200);
+        } catch {}
+      };
+    }
+  };
+  live.onRequest = ({ to, text }) => {
+    room?.relayRequest(to, text);
+    const feed = document.querySelector('#xr-feed');
+    if (feed) {
+      const row = document.createElement('div');
+      row.className = 'xr-event phone';
+      row.innerHTML = `<b>Phone → ${to || 'Hub'}</b><p>${String(text).slice(0, 140)}</p>`;
+      feed.prepend(row);
+      while (feed.children.length > 3) feed.lastChild.remove();
+    }
+  };
+
+  document.querySelector('#xr-back').addEventListener('click', () => { live.close(); room?.dispose(); showBrief(); });
 
   const { launchOpsRoom } = await import('./xr-room.js');
   if (!document.querySelector('#xr-canvas')) return;
@@ -625,6 +661,7 @@ async function runSwarm3D() {
     phaseNames: PHASE_NAMES,
     money,
     onComplete: () => {
+      live.send({ type: 'status', status: { text: 'Launch plan ready', phase: 'COMPLETE', progress: 100 } });
       const btn = document.querySelector('#xr-results');
       if (btn) { btn.hidden = false; }
     },
@@ -632,6 +669,8 @@ async function runSwarm3D() {
   });
 
   room.callbacks.onEvent = ({ who, to, text, progress, phase }) => {
+    live.send({ type: 'event', event: [who, text, progress, to || ''] });
+    live.send({ type: 'status', status: { text, phase, progress } });
     const feed = document.querySelector('#xr-feed');
     if (!feed) return;
     const row = document.createElement('div');
@@ -669,27 +708,51 @@ async function runSwarm3D() {
     const ask = document.querySelector('#xr-ask');
     if (ask) ask.hidden = true;
     parseBrief(trimmed);
+    live.send({
+      type: 'brief',
+      brief: { type: state.scenario.type, city: state.city, budget: state.budget, team: state.team, text: trimmed.slice(0, 280) },
+      agents: [],
+      status: { text: 'Qwen Coordinator is planning…', phase: 'PLANNING', progress: 4 }
+    });
     if (api.live) {
       setPhase('QWEN COORDINATOR PLANNING');
       let lineIndex = 0;
       room.setStatus(PLANNING_LINES[0]);
-      const ticker = setInterval(() => { lineIndex++; room.setStatus(PLANNING_LINES[lineIndex % PLANNING_LINES.length]); }, 2400);
+      const ticker = setInterval(() => {
+        lineIndex++;
+        const line = PLANNING_LINES[lineIndex % PLANNING_LINES.length];
+        room.setStatus(line);
+        live.send({ type: 'status', status: { text: line, phase: 'PLANNING', progress: Math.min(16, 4 + lineIndex * 2) } });
+      }, 2400);
       try {
         const plan = await api.plan(trimmed);
         clearInterval(ticker);
         applyPlan(plan);
         setHudBrief('live Qwen plan');
+        live.send({
+          type: 'brief',
+          brief: { type: plan.business_type, city: state.city, budget: state.budget, team: state.team, text: trimmed.slice(0, 280) },
+          agents: plan.agents,
+          status: { text: 'Specialists reporting in…', phase: 'RUNNING', progress: 8 }
+        });
+        live.send({ type: 'plan', plan });
+        // Concept image for the companion's PDF report (and the results page).
+        api.image({ business: plan.business_type, city: state.city, items: state.scenario.items.map(item => item[0]) })
+          .then(({ url }) => { state.conceptImage = url; live.send({ type: 'image', url }); })
+          .catch(() => {});
         room.begin(state.scenario, plan.events, { type: state.scenario.type, budget: state.budget });
       } catch (err) {
         clearInterval(ticker);
         setHudBrief(`live planning unavailable · demo catalogue`);
         room.setStatus(`Live planning unavailable — showing the demo catalogue`);
         console.warn('Live planning failed:', err.message);
+        live.send({ type: 'agents', agents: state.scenario.agents });
         await wait(1600);
         room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget });
       }
     } else {
       setHudBrief('demo catalogue');
+      live.send({ type: 'agents', agents: state.scenario.agents });
       room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget });
     }
   }
@@ -754,8 +817,13 @@ async function runSwarm3D() {
     arBtn.hidden = false;
     arBtn.addEventListener('click', () => room.enterAR());
   }
-  document.querySelector('#xr-results').addEventListener('click', () => { room.dispose(); showResults(); });
+  document.querySelector('#xr-results').addEventListener('click', () => { live.close(); room.dispose(); showResults(); });
 }
 
-showBrief();
-api.init();
+const connectMatch = window.location.pathname.match(/^\/connect(?:\/([A-Za-z0-9]{4,8}))?\/?$/i);
+if (connectMatch) {
+  import('./connect.js').then(module => module.showConnect(app, (connectMatch[1] || '').toUpperCase()));
+} else {
+  showBrief();
+  api.init();
+}

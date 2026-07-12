@@ -787,6 +787,33 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     },
     isRunning: () => timelineStart >= 0,
     isFinished: () => finished,
+    /** A request sent from a paired phone — the target robot reacts visibly. */
+    relayRequest(toName, text) {
+      const elapsed = timer.getElapsed();
+      const normalized = String(toName || 'Hub');
+      const target = findEntity(normalized) || coordEntity;
+      if (!target.isHub && !target.active) spawnSpecialist(target, elapsed);
+      if (!target.isHub) {
+        camera.getWorldPosition(tmp);
+        target.faceTarget = new THREE.Vector3(tmp.x, 0, tmp.z);
+        target.returnAt = elapsed + 3;
+        target.nodUntil = elapsed + 1.6;
+      }
+      const bubble = makeBubbleSprite(`PHONE → ${target.isHub ? 'HUB' : target.name.toUpperCase()}: ${text}`, ORANGE);
+      // Route through showBubble-equivalent bookkeeping with the orange accent.
+      for (let b = bubbles.length - 1; b >= 0; b--) {
+        if (bubbles[b].entity === target) {
+          world.remove(bubbles[b].sprite);
+          bubbles[b].sprite.material.map.dispose();
+          bubbles[b].sprite.material.dispose();
+          bubbles.splice(b, 1);
+        }
+      }
+      world.add(bubble);
+      bubbles.push({ sprite: bubble, entity: target, start: elapsed, until: elapsed + 4.2, kind: 'speech' });
+      rows.push({ who: 'Phone', to: target.isHub ? 'Hub' : target.name, text: String(text).slice(0, 90), warning: false });
+      drawBoard();
+    },
     /** Start the swarm run. Call once, after the user has given their brief. */
     begin(scenario, timeline, newBrief) {
       if (timelineStart >= 0) return;
