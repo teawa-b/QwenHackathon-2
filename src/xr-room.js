@@ -25,6 +25,50 @@ function makeLabelSprite(code, name, accent) {
   return sprite;
 }
 
+function makeBubbleSprite(text, accent, kind = 'speech') {
+  const thought = kind === 'thought';
+  const canvas = document.createElement('canvas');
+  canvas.width = 768; canvas.height = 232;
+  const ctx = canvas.getContext('2d');
+  // Wrap into up to 3 lines
+  const words = String(text).split(' ');
+  const lines = [''];
+  for (const word of words) {
+    const candidate = lines[lines.length - 1] ? `${lines[lines.length - 1]} ${word}` : word;
+    if (candidate.length > 30 && lines[lines.length - 1]) {
+      if (lines.length === 3) { lines[2] = lines[2].slice(0, 28) + '…'; break; }
+      lines.push(word);
+    } else {
+      lines[lines.length - 1] = candidate;
+    }
+  }
+  const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
+  ctx.fillStyle = thought ? 'rgba(10,20,16,.84)' : 'rgba(7,17,14,.92)';
+  ctx.beginPath(); ctx.roundRect(8, 8, 752, thought ? 186 : 216, thought ? 60 : 26); ctx.fill();
+  ctx.strokeStyle = accentCss; ctx.globalAlpha = thought ? .45 : .8; ctx.lineWidth = thought ? 4 : 5;
+  if (thought) ctx.setLineDash([16, 12]);
+  ctx.beginPath(); ctx.roundRect(8, 8, 752, thought ? 186 : 216, thought ? 60 : 26); ctx.stroke();
+  ctx.setLineDash([]);
+  if (thought) {
+    // Trailing "thought" dots toward the robot's head
+    for (const [x, y, r] of [[120, 216, 9], [90, 228, 6]]) {
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = thought ? '#9fb3a6' : '#dce7dd';
+  ctx.font = thought ? 'italic 500 36px sans-serif' : '600 40px sans-serif';
+  ctx.textAlign = 'center';
+  const boxHeight = thought ? 186 : 216;
+  const startY = (boxHeight + 16) / 2 - (lines.length - 1) * 26 + 12;
+  lines.forEach((line, i) => ctx.fillText(line, 384, startY + i * 50));
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+  sprite.scale.set(thought ? 1.65 : 1.9, thought ? 0.5 : 0.57, 1);
+  return sprite;
+}
+
 function buildBot(accent, scale = 1) {
   const bot = new THREE.Group();
   const trim = new THREE.MeshStandardMaterial({ color: TRIM, roughness: .6 });
@@ -67,7 +111,8 @@ function buildBot(accent, scale = 1) {
 }
 
 export function launchOpsRoom({ container, brief, phaseNames, money, onComplete, onExit }) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // alpha:true lets the camera passthrough show through in immersive-ar.
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.xr.enabled = true;
@@ -75,8 +120,15 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   renderer.domElement.style.touchAction = 'none';
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(INK);
-  scene.fog = new THREE.Fog(INK, 9, 26);
+  const inkColor = new THREE.Color(INK);
+  const inkFog = new THREE.Fog(INK, 9, 26);
+  scene.background = inkColor;
+  scene.fog = inkFog;
+
+  // Everything the swarm owns lives in one group so passthrough AR can shrink
+  // the whole ops room and set it down on a real detected surface.
+  const world = new THREE.Group();
+  scene.add(world);
 
   const rig = new THREE.Group();
   const camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 60);
@@ -87,26 +139,29 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   scene.add(new THREE.HemisphereLight(0x27362e, 0x040a07, 1.4));
   const key = new THREE.DirectionalLight(0xe8f5e0, 1.5);
   key.position.set(3, 6, 4); scene.add(key);
-  const hubLight = new THREE.PointLight(LIME, 8, 9); hubLight.position.set(0, 2.4, 0); scene.add(hubLight);
+  const hubLight = new THREE.PointLight(LIME, 8, 9); hubLight.position.set(0, 2.4, 0); world.add(hubLight);
 
-  // Floor
+  // Virtual floor — hidden in passthrough AR where the real room is the floor.
+  const ground = new THREE.Group();
+  world.add(ground);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(15, 48), new THREE.MeshStandardMaterial({ color: 0x0a1410, roughness: .9 }));
-  floor.rotation.x = -Math.PI / 2; scene.add(floor);
+  floor.rotation.x = -Math.PI / 2; ground.add(floor);
   const grid = new THREE.GridHelper(30, 34, 0x1d2c24, 0x101c16);
-  grid.position.y = 0.005; scene.add(grid);
+  grid.position.y = 0.005; ground.add(grid);
   for (const [radius, opacity] of [[2.9, .5], [0.85, .8]]) {
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(radius, radius + 0.045, 64),
       new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity, side: THREE.DoubleSide })
     );
-    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.01; scene.add(ring);
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.01;
+    ring.userData.keepInAR = true; world.add(ring);
   }
 
   // Coordinator — the robot you hold and talk to
   const coordinator = buildBot(LIME, 1.15);
-  scene.add(coordinator);
+  world.add(coordinator);
   const hubLabel = makeLabelSprite('HUB', 'Coordinator', LIME);
-  hubLabel.position.set(0, 2.45, 0); scene.add(hubLabel);
+  hubLabel.position.set(0, 2.45, 0); world.add(hubLabel);
   const hubAnchor = new THREE.Vector3(0, 1.15, 0);
 
   // Listening halo shown while the mic is open
@@ -114,7 +169,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     new THREE.RingGeometry(0.62, 0.7, 48),
     new THREE.MeshBasicMaterial({ color: MINT, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })
   );
-  halo.rotation.x = -Math.PI / 2; halo.position.y = 0.05; scene.add(halo);
+  halo.rotation.x = -Math.PI / 2; halo.position.y = 0.05; world.add(halo);
 
   // Status board
   const boardCanvas = document.createElement('canvas');
@@ -128,7 +183,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   );
   board.position.set(0, 3.35, -4.3);
   board.rotation.x = 0.06;
-  scene.add(board);
+  world.add(board);
 
   // Run state — nothing plays until begin() is called
   let specialists = [];
@@ -173,10 +228,11 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       let y = 136;
       for (const row of rows.slice(-6)) {
         ctx.fillStyle = row.warning ? '#ff966e' : '#55e6b1';
-        ctx.font = '700 26px sans-serif';
-        ctx.fillText(row.who.toUpperCase(), 40, y);
-        ctx.fillStyle = '#c8d2ca'; ctx.font = '400 25px sans-serif';
-        ctx.fillText(row.text.length > 62 ? row.text.slice(0, 61) + '…' : row.text, 240, y);
+        ctx.font = '700 22px sans-serif';
+        const speaker = `${row.who}${row.to ? ` → ${row.to}` : ''}`.toUpperCase();
+        ctx.fillText(speaker.length > 22 ? speaker.slice(0, 21) + '…' : speaker, 40, y);
+        ctx.fillStyle = '#c8d2ca'; ctx.font = '400 24px sans-serif';
+        ctx.fillText(row.text.length > 56 ? row.text.slice(0, 55) + '…' : row.text, 330, y);
         y += 56;
       }
       ctx.fillStyle = finished ? '#b8f632' : '#eef0e8'; ctx.font = '700 30px sans-serif';
@@ -211,6 +267,14 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       controls.enabled = false;
       callbacks.onHoldStart?.();
       e.preventDefault();
+      return;
+    }
+    // Tap a specialist robot to inspect its role, spend and current work.
+    for (const s of specialists) {
+      if (s.active && raycaster.intersectObject(s.bot, true).length) {
+        inspectSpecialist(s);
+        return;
+      }
     }
   }
   function onPointerUp() {
@@ -225,6 +289,62 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
 
   // WebXR session handling — in VR, point at the coordinator and hold trigger.
   let xrSession = null;
+  let arMode = false;
+  let arPlaced = false;
+  let hitTestSource = null;
+
+  // Passthrough AR placement reticle — follows real surfaces via WebXR hit-test
+  // (plane-detection is requested so Quest-class devices snap to real planes).
+  const reticle = new THREE.Group();
+  const reticleRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.14, 0.18, 40),
+    new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+  );
+  reticleRing.rotation.x = -Math.PI / 2;
+  const reticleDot = new THREE.Mesh(
+    new THREE.CircleGeometry(0.03, 20),
+    new THREE.MeshBasicMaterial({ color: MINT, side: THREE.DoubleSide })
+  );
+  reticleDot.rotation.x = -Math.PI / 2;
+  reticle.add(reticleRing, reticleDot);
+  reticle.matrixAutoUpdate = false;
+  reticle.visible = false;
+  scene.add(reticle);
+
+  const AR_SCALE = 0.42; // tabletop-friendly miniature of the ops room
+
+  function placeWorldAtReticle() {
+    if (!reticle.visible) return false;
+    const position = new THREE.Vector3();
+    reticle.matrix.decompose(position, new THREE.Quaternion(), new THREE.Vector3());
+    world.position.copy(position);
+    world.scale.setScalar(AR_SCALE);
+    // Turn the room to face the viewer standing at the headset position.
+    camera.getWorldPosition(tmp);
+    world.rotation.y = Math.atan2(tmp.x - position.x, tmp.z - position.z);
+    world.visible = true;
+    arPlaced = true;
+    reticle.visible = false;
+    if (timelineStart < 0) {
+      statusText = 'HOLD THE COORDINATOR TRIGGER AND SPEAK';
+      drawBoard();
+    }
+    return true;
+  }
+
+  function resetWorldTransform() {
+    world.position.set(0, 0, 0);
+    world.rotation.set(0, 0, 0);
+    world.scale.setScalar(1);
+    world.visible = true;
+    ground.visible = true;
+    scene.background = inkColor;
+    scene.fog = inkFog;
+    reticle.visible = false;
+    arMode = false;
+    arPlaced = false;
+    if (hitTestSource) { hitTestSource.cancel?.(); hitTestSource = null; }
+  }
   const controllerRotation = new THREE.Matrix4();
   function controllerHitsCoordinator(controller) {
     controllerRotation.identity().extractRotation(controller.matrixWorld);
@@ -234,9 +354,20 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   }
   const onSelectStart = event => {
     const controller = event.target;
-    if (!controllerHitsCoordinator(controller)) return;
-    controller.userData.holdingCoordinator = true;
-    callbacks.onHoldStart?.();
+    // In passthrough AR the first trigger/tap places the room on the surface.
+    if (arMode && !arPlaced) { placeWorldAtReticle(); return; }
+    if (controllerHitsCoordinator(controller)) {
+      controller.userData.holdingCoordinator = true;
+      callbacks.onHoldStart?.();
+      return;
+    }
+    // In VR, pointing at a specialist and pulling the trigger inspects it.
+    for (const s of specialists) {
+      if (s.active && raycaster.intersectObject(s.bot, true).length) {
+        inspectSpecialist(s);
+        return;
+      }
+    }
   };
   const onSelectEnd = event => {
     const controller = event.target;
@@ -257,6 +388,22 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     rig.add(controller);
     return controller;
   });
+  function onSessionEnd() {
+    for (const controller of controllers) {
+      if (controller.userData.holdingCoordinator) {
+        controller.userData.holdingCoordinator = false;
+        callbacks.onHoldEnd?.();
+      }
+    }
+    xrSession = null;
+    resetWorldTransform();
+    rig.position.set(0, 0, 0);
+    camera.position.set(0, 3.1, 7.6);
+    controls.enabled = true; controls.update();
+    callbacks.onXRChange?.(false);
+    if (finished) callbacks.onFinished?.();
+  }
+
   async function enterVR() {
     if (xrSession) return;
     try {
@@ -264,20 +411,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
       });
       xrSession = session;
-      session.addEventListener('end', () => {
-        for (const controller of controllers) {
-          if (controller.userData.holdingCoordinator) {
-            controller.userData.holdingCoordinator = false;
-            callbacks.onHoldEnd?.();
-          }
-        }
-        xrSession = null;
-        rig.position.set(0, 0, 0);
-        camera.position.set(0, 3.1, 7.6);
-        controls.enabled = true; controls.update();
-        callbacks.onXRChange?.(false);
-        if (finished) callbacks.onFinished?.();
-      });
+      session.addEventListener('end', onSessionEnd);
       const gl = renderer.getContext();
       session.updateRenderState({
         baseLayer: new XRWebGLLayer(session, gl, {
@@ -300,64 +434,224 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     }
   }
 
+  // Passthrough AR: the real room shows through, WebXR hit-test (backed by
+  // plane detection where available) finds real surfaces, and the first
+  // trigger/tap sets the miniature ops room down on one of them.
+  async function enterAR() {
+    if (xrSession) return;
+    try {
+      const session = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['hit-test'],
+        optionalFeatures: ['local-floor', 'plane-detection', 'anchors', 'hand-tracking']
+      });
+      xrSession = session;
+      arMode = true;
+      arPlaced = false;
+      session.addEventListener('end', onSessionEnd);
+      renderer.xr.setReferenceSpaceType('local');
+      await renderer.xr.setSession(session);
+      // Camera passthrough replaces the virtual room shell.
+      scene.background = null;
+      scene.fog = null;
+      ground.visible = false;
+      world.visible = false;
+      controls.enabled = false;
+      rig.position.set(0, 0, 0);
+      const viewerSpace = await session.requestReferenceSpace('viewer');
+      hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+      if (timelineStart < 0) statusText = 'POINT AT A SURFACE AND PULL THE TRIGGER TO PLACE ME';
+      drawBoard();
+      callbacks.onXRChange?.(true);
+    } catch (err) {
+      console.warn('AR session failed', err);
+      resetWorldTransform();
+      callbacks.onXRError?.(err);
+    }
+  }
+
   const timer = new THREE.Timer();
   timer.connect(document);
   const tmp = new THREE.Vector3();
-  const EVENT_GAP = 1.45;
+  const tmpDest = new THREE.Vector3();
+  const EVENT_GAP = 2.4; // long enough to read each exchange
+
+  // The coordinator counts as a conversation participant too.
+  const coordEntity = {
+    isHub: true, bot: coordinator, accent: LIME,
+    thoughts: ['Tracking spend across the whole swarm…', 'Merging shortlists into one package…', 'Waiting on specialist reports from Alibaba…'],
+    thoughtIndex: 0, nextThoughtAt: Infinity
+  };
+  const bubbles = []; // { sprite, entity, start, until, kind }
+  const talks = [];   // { from, to, line, mesh, start } — agent-to-agent pulses
+
+  function entityPosition(entity, out) {
+    if (entity.isHub) return out.set(0, 1.15, 0);
+    return out.copy(entity.bot.position).setY(0.95);
+  }
+
+  function findEntity(name) {
+    const n = String(name || '').toLowerCase().trim();
+    if (!n) return null;
+    const specialist = specialists.find(s => s.name.toLowerCase() === n || s.code.toLowerCase() === n);
+    if (specialist) return specialist;
+    if (n.includes('coordinator') || n === 'swarm' || n === 'hub' || n.includes('cost')) return coordEntity;
+    return null;
+  }
 
   function buildSpecialists(agents) {
     return agents.map((agent, i) => {
       const angle = -Math.PI / 2 + (i + 0.5) * (Math.PI * 2 / agents.length);
       const accent = ACCENTS[i % ACCENTS.length];
       const bot = buildBot(accent, 0.8);
-      bot.position.set(Math.cos(angle) * 2.9, 0, Math.sin(angle) * 2.9);
+      const home = new THREE.Vector3(Math.cos(angle) * 2.9, 0, Math.sin(angle) * 2.9);
+      bot.position.copy(home);
       bot.lookAt(0, 0, 0);
       bot.visible = false;
-      scene.add(bot);
+      world.add(bot);
       const label = makeLabelSprite(agent[0], agent[1], accent);
       label.position.copy(bot.position).setY(1.95);
       label.visible = false;
-      scene.add(label);
+      world.add(label);
       const link = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([hubAnchor, bot.position.clone().setY(0.95)]),
         new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0 })
       );
-      scene.add(link);
+      world.add(link);
       const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0 }));
-      scene.add(pulse);
+      world.add(pulse);
       const beam = new THREE.Mesh(
         new THREE.CylinderGeometry(0.34, 0.34, 4, 20, 1, true),
         new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
       );
       beam.position.copy(bot.position).setY(2);
-      scene.add(beam);
-      return { bot, label, link, pulse, beam, accent, spawnedAt: -1, active: false, offset: Math.random() };
+      world.add(beam);
+      const focus = String(agent[2] || 'my category');
+      const thoughts = Array.isArray(agent[3]) && agent[3].length ? agent[3] : [
+        `Scanning Alibaba for ${focus.toLowerCase()}…`,
+        'Comparing unit prices and MOQ terms…',
+        'Attaching evidence to my shortlist…'
+      ];
+      return {
+        bot, label, link, pulse, beam, accent,
+        code: String(agent[0] || ''), name: String(agent[1] || ''), focus,
+        thoughts, thoughtIndex: 0, nextThoughtAt: Infinity, itemLines: [],
+        home, basePos: home.clone(),
+        moveTarget: null, returnAt: -1, faceTarget: null, nodUntil: -1,
+        spawnedAt: -1, active: false, offset: Math.random()
+      };
     });
   }
 
+  function spawnSpecialist(s, elapsed) {
+    if (s.active) return;
+    s.spawnedAt = elapsed; s.active = true;
+    s.nextThoughtAt = elapsed + 2 + s.offset * 4;
+    s.bot.visible = true; s.label.visible = true;
+    s.link.material.opacity = .3;
+  }
+
+  function showBubble(entity, text, elapsed, kind = 'speech', duration = EVENT_GAP + 0.8) {
+    // One bubble per robot at a time; speech always wins over a thought.
+    for (let b = bubbles.length - 1; b >= 0; b--) {
+      if (bubbles[b].entity === entity) {
+        if (kind === 'thought' && bubbles[b].kind === 'speech') return;
+        scene.remove(bubbles[b].sprite);
+        bubbles[b].sprite.material.map.dispose();
+        bubbles[b].sprite.material.dispose();
+        bubbles.splice(b, 1);
+      }
+    }
+    const sprite = makeBubbleSprite(text, entity.accent, kind);
+    world.add(sprite);
+    bubbles.push({ sprite, entity, start: elapsed, until: elapsed + duration, kind });
+  }
+
+  // Tap (or point-and-select in VR) any robot to inspect what it is doing.
+  function inspectSpecialist(s) {
+    const elapsed = timer.getElapsed();
+    camera.getWorldPosition(tmp);
+    s.faceTarget = new THREE.Vector3(tmp.x, 0, tmp.z);
+    s.returnAt = elapsed + 2.6;
+    s.nodUntil = elapsed + 1.2;
+    const spent = s.itemLines.reduce((sum, item) => sum + (Number(item[2]) || 0), 0);
+    const statLine = s.itemLines.length
+      ? ` · ${s.itemLines.length} line${s.itemLines.length === 1 ? '' : 's'} sourced · £${spent.toLocaleString('en-GB')}`
+      : '';
+    showBubble(s, `${s.name}: ${s.focus}${statLine}`, elapsed, 'speech', 3);
+    s.nextThoughtAt = elapsed + 4;
+  }
+
+  function startTalk(from, to, elapsed) {
+    const a = entityPosition(from, new THREE.Vector3());
+    const b = entityPosition(to, new THREE.Vector3());
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([a, b]),
+      new THREE.LineBasicMaterial({ color: from.accent, transparent: true, opacity: 0.55 })
+    );
+    world.add(line);
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 10, 8),
+      new THREE.MeshBasicMaterial({ color: from.accent, transparent: true, opacity: 0.95 })
+    );
+    world.add(mesh);
+    talks.push({ from, to, line, mesh, start: elapsed });
+  }
+
   function fireEvent(i, elapsed) {
-    const [who, text, pct] = events[i];
-    rows.push({ who, text, warning: /critic/i.test(who) });
+    const [who, text, pct, to] = events[i];
+    rows.push({ who, to, text, warning: /critic/i.test(who) });
     progress = pct;
     phaseLabel = phaseNames[Math.min(phaseNames.length - 1, Math.floor(i / Math.max(1, events.length - 1) * (phaseNames.length - 1)))];
-    if (i < specialists.length) {
-      const s = specialists[i];
-      s.spawnedAt = elapsed; s.active = true;
-      s.bot.visible = true; s.label.visible = true;
-      s.link.material.opacity = .3;
+
+    // Guarantee everyone eventually beams in even if they never speak.
+    if (i < specialists.length) spawnSpecialist(specialists[i], elapsed);
+
+    const speaker = findEntity(who);
+    const target = findEntity(to);
+    if (speaker && !speaker.isHub) spawnSpecialist(speaker, elapsed);
+    if (target && !target.isHub) spawnSpecialist(target, elapsed);
+
+    // The speaker walks toward whoever it is addressing, faces them and talks.
+    if (speaker && !speaker.isHub && target && target !== speaker) {
+      const targetPos = entityPosition(target, new THREE.Vector3()).setY(0);
+      speaker.moveTarget = speaker.home.clone().lerp(targetPos, target.isHub ? 0.45 : 0.42);
+      speaker.faceTarget = targetPos.clone();
+      speaker.returnAt = elapsed + EVENT_GAP + 0.6;
+      if (!target.isHub) {
+        target.faceTarget = speaker.home.clone();
+        target.returnAt = elapsed + EVENT_GAP + 0.6;
+        target.nodUntil = elapsed + 1.6;
+      }
     }
+    if (speaker) showBubble(speaker, text, elapsed);
+    if (speaker && target && target !== speaker) startTalk(speaker, target, elapsed);
+
     if (i === events.length - 1) {
       finished = true;
       setTimeout(() => { if (!xrSession) callbacks.onFinished?.(); }, 1500);
     }
     drawBoard();
-    callbacks.onEvent?.({ who, text, progress: pct, phase: phaseLabel, index: i });
+    callbacks.onEvent?.({ who, to, text, progress: pct, phase: phaseLabel, index: i });
   }
 
-  renderer.setAnimationLoop(timestamp => {
+  renderer.setAnimationLoop((timestamp, frame) => {
     timer.update(timestamp);
     const dt = timer.getDelta();
     const elapsed = timer.getElapsed();
+
+    // Passthrough AR surface detection: track the latest hit-test pose until
+    // the user places the room.
+    if (arMode && !arPlaced && frame && hitTestSource) {
+      const hits = frame.getHitTestResults(hitTestSource);
+      const referenceSpace = renderer.xr.getReferenceSpace();
+      const pose = hits.length && referenceSpace ? hits[0].getPose(referenceSpace) : null;
+      if (pose) {
+        reticle.visible = true;
+        reticle.matrix.fromArray(pose.transform.matrix);
+      } else {
+        reticle.visible = false;
+      }
+    }
 
     if (timelineStart >= 0 && eventIndex < events.length && elapsed > timelineStart + eventIndex * EVENT_GAP) {
       fireEvent(eventIndex, elapsed);
@@ -380,13 +674,91 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       const since = elapsed - s.spawnedAt;
       const grow = Math.min(1, since / 0.6);
       const ease = 1 - Math.pow(1 - grow, 3);
-      s.bot.scale.setScalar(0.8 * ease);
-      s.bot.position.y = Math.sin(elapsed * 1.8 + s.offset * 6) * 0.045;
+      const nod = elapsed < s.nodUntil ? 1 + Math.max(0, Math.sin((s.nodUntil - elapsed) * 9)) * 0.05 : 1;
+      s.bot.scale.setScalar(0.8 * ease * nod);
+
+      // Walk: toward a conversation partner while speaking, otherwise drift near home.
+      const conversing = s.moveTarget && elapsed < s.returnAt;
+      tmpDest.copy(conversing ? s.moveTarget : s.home);
+      if (!conversing && !finished) {
+        tmpDest.x += Math.sin(elapsed * 0.4 + s.offset * 7) * 0.2;
+        tmpDest.z += Math.cos(elapsed * 0.33 + s.offset * 5) * 0.2;
+      }
+      s.basePos.lerp(tmpDest, 1 - Math.exp(-dt * 2.6));
+      const bob = Math.sin(elapsed * 1.8 + s.offset * 6) * 0.045;
+      s.bot.position.set(s.basePos.x, bob, s.basePos.z);
+
+      // Face the agent being spoken to, otherwise the coordinator.
+      const facing = s.faceTarget && elapsed < s.returnAt + 0.8 ? s.faceTarget : hubAnchor;
+      s.bot.lookAt(facing.x, s.bot.position.y, facing.z);
+
+      // Label and hub link follow the walking bot.
+      s.label.position.set(s.basePos.x, 1.95 + bob, s.basePos.z);
+      const linkPositions = s.link.geometry.attributes.position;
+      linkPositions.setXYZ(1, s.bot.position.x, 0.95, s.bot.position.z);
+      linkPositions.needsUpdate = true;
+
       s.beam.material.opacity = Math.max(0, 0.35 * (1 - since / 0.8));
       const t = (elapsed * 0.45 + s.offset) % 1;
       tmp.copy(hubAnchor).lerp(s.bot.position.clone().setY(0.95), t);
       s.pulse.position.copy(tmp);
       s.pulse.material.opacity = finished ? 0 : Math.sin(t * Math.PI) * 0.9;
+    }
+
+    // Between spoken events, working agents surface their genuine reasoning
+    // steps as thought bubbles (Qwen-authored in live mode).
+    if (timelineStart >= 0 && !finished) {
+      for (const s of specialists) {
+        if (!s.active || elapsed < s.nextThoughtAt) continue;
+        s.nextThoughtAt = elapsed + 5.5 + s.offset * 4;
+        if (!bubbles.some(bubble => bubble.entity === s)) {
+          showBubble(s, s.thoughts[s.thoughtIndex++ % s.thoughts.length], elapsed, 'thought', 3.4);
+        }
+      }
+      if (elapsed >= coordEntity.nextThoughtAt) {
+        coordEntity.nextThoughtAt = elapsed + 7;
+        if (!bubbles.some(bubble => bubble.entity === coordEntity)) {
+          showBubble(coordEntity, coordEntity.thoughts[coordEntity.thoughtIndex++ % coordEntity.thoughts.length], elapsed, 'thought', 3.4);
+        }
+      }
+    }
+
+    // Speech bubbles hover above whoever is talking, then fade out.
+    for (let b = bubbles.length - 1; b >= 0; b--) {
+      const bubble = bubbles[b];
+      const holder = bubble.entity;
+      if (holder.isHub) bubble.sprite.position.set(0, 2.9, 0);
+      else bubble.sprite.position.set(holder.basePos.x, 2.45, holder.basePos.z);
+      const life = bubble.until - elapsed;
+      const fadeIn = Math.min(1, (elapsed - bubble.start) / 0.25);
+      bubble.sprite.material.opacity = life < 0.5 ? Math.max(0, life / 0.5) : fadeIn;
+      if (life <= 0) {
+        scene.remove(bubble.sprite);
+        bubble.sprite.material.map.dispose();
+        bubble.sprite.material.dispose();
+        bubbles.splice(b, 1);
+      }
+    }
+
+    // Agent-to-agent message pulses travel between the two talking robots.
+    for (let k = talks.length - 1; k >= 0; k--) {
+      const talk = talks[k];
+      const t = (elapsed - talk.start) / 1.1;
+      const a = entityPosition(talk.from, new THREE.Vector3());
+      const b = entityPosition(talk.to, tmp);
+      const linePositions = talk.line.geometry.attributes.position;
+      linePositions.setXYZ(0, a.x, a.y, a.z);
+      linePositions.setXYZ(1, b.x, b.y, b.z);
+      linePositions.needsUpdate = true;
+      talk.line.material.opacity = Math.max(0, 0.55 * (1 - t * 0.6));
+      talk.mesh.position.copy(a).lerp(b, Math.min(1, t));
+      talk.mesh.material.opacity = t >= 1 ? Math.max(0, 0.95 * (1 - (t - 1) * 4)) : 0.95;
+      if (t > 1.4) {
+        scene.remove(talk.line); scene.remove(talk.mesh);
+        talk.line.geometry.dispose(); talk.line.material.dispose();
+        talk.mesh.geometry.dispose(); talk.mesh.material.dispose();
+        talks.splice(k, 1);
+      }
     }
 
     if (!renderer.xr.isPresenting) controls.update();
@@ -404,16 +776,54 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   return {
     callbacks,
     enterVR,
+    enterAR,
     async vrSupported() {
       try { return !!navigator.xr && await navigator.xr.isSessionSupported('immersive-vr'); }
       catch { return false; }
     },
+    async arSupported() {
+      try { return !!navigator.xr && await navigator.xr.isSessionSupported('immersive-ar'); }
+      catch { return false; }
+    },
     isRunning: () => timelineStart >= 0,
     isFinished: () => finished,
+    /** A request sent from a paired phone — the target robot reacts visibly. */
+    relayRequest(toName, text) {
+      const elapsed = timer.getElapsed();
+      const normalized = String(toName || 'Hub');
+      const target = findEntity(normalized) || coordEntity;
+      if (!target.isHub && !target.active) spawnSpecialist(target, elapsed);
+      if (!target.isHub) {
+        camera.getWorldPosition(tmp);
+        target.faceTarget = new THREE.Vector3(tmp.x, 0, tmp.z);
+        target.returnAt = elapsed + 3;
+        target.nodUntil = elapsed + 1.6;
+      }
+      const bubble = makeBubbleSprite(`PHONE → ${target.isHub ? 'HUB' : target.name.toUpperCase()}: ${text}`, ORANGE);
+      // Route through showBubble-equivalent bookkeeping with the orange accent.
+      for (let b = bubbles.length - 1; b >= 0; b--) {
+        if (bubbles[b].entity === target) {
+          world.remove(bubbles[b].sprite);
+          bubbles[b].sprite.material.map.dispose();
+          bubbles[b].sprite.material.dispose();
+          bubbles.splice(b, 1);
+        }
+      }
+      world.add(bubble);
+      bubbles.push({ sprite: bubble, entity: target, start: elapsed, until: elapsed + 4.2, kind: 'speech' });
+      rows.push({ who: 'Phone', to: target.isHub ? 'Hub' : target.name, text: String(text).slice(0, 90), warning: false });
+      drawBoard();
+    },
     /** Start the swarm run. Call once, after the user has given their brief. */
     begin(scenario, timeline, newBrief) {
       if (timelineStart >= 0) return;
       specialists = buildSpecialists(scenario.agents);
+      // Attribute sourced lines to their agent so tap-to-inspect shows real spend.
+      for (const s of specialists) {
+        s.itemLines = (scenario.items || []).filter(item =>
+          String(item[7] || '').toLowerCase() === s.name.toLowerCase());
+      }
+      coordEntity.nextThoughtAt = timer.getElapsed() + 5;
       events = timeline;
       if (newBrief) briefLine = `${newBrief.type.toUpperCase()} · ${money(newBrief.budget)}`;
       statusText = '';
@@ -432,6 +842,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     },
     dispose() {
       renderer.setAnimationLoop(null);
+      if (hitTestSource) { hitTestSource.cancel?.(); hitTestSource = null; }
       if (xrSession) xrSession.end().catch(() => {});
       window.removeEventListener('resize', onResize);
       window.removeEventListener('pointerup', onPointerUp);

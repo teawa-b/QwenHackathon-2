@@ -75,6 +75,43 @@ export async function chatJSON({ system, user, temperature = 0.4, maxTokens = 35
   }
 }
 
+/**
+ * Chat completion with Qwen's live web search enabled (DashScope enable_search).
+ * Returns the parsed JSON answer plus the real search results the model saw,
+ * so callers can verify that any cited URL genuinely came from the web.
+ */
+export async function chatJSONWithSearch({ system, user, temperature = 0.3, maxTokens = 3000 }) {
+  const data = await post('/compatible-mode/v1/chat/completions', {
+    model: MODELS.text,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user }
+    ],
+    temperature,
+    max_tokens: maxTokens,
+    enable_thinking: false,
+    enable_search: true,
+    search_options: { forced_search: true, enable_source: true }
+  }, { timeoutMs: 120000 });
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new QwenError('Qwen returned an empty completion');
+  let json;
+  try {
+    json = JSON.parse(content);
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (!match) throw new QwenError('Qwen returned malformed JSON');
+    json = JSON.parse(match[0]);
+  }
+  const rawSources = data.search_info?.search_results
+    || data.choices?.[0]?.message?.search_info?.search_results
+    || [];
+  const sources = rawSources
+    .map(result => ({ url: String(result.url || ''), title: String(result.title || '') }))
+    .filter(source => source.url.startsWith('http'));
+  return { json, sources };
+}
+
 /** Transcribe a short base64-encoded audio clip. */
 export async function transcribe({ base64, mime = 'audio/wav' }) {
   const data = await post('/compatible-mode/v1/chat/completions', {

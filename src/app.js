@@ -1,4 +1,5 @@
 import './style.css';
+import { createHostLink } from './live.js';
 
 const scenarios = {
   studio: {
@@ -174,6 +175,7 @@ function briefView() {
         <button class="assemble" data-start><span>ASSEMBLE MY SWARM</span><b>↗</b></button>
         <button class="assemble xr-launch" data-start-3d><span>ENTER 3D OPS ROOM · VR</span><b>◈</b></button>
         <p class="fineprint">No purchases or supplier messages are sent. Every consequential action requires your approval.</p>
+        <a class="pair-link" href="/connect">Have a session code from a VR headset? <b>Pair this device →</b></a>
       </div>
     </section>
     <section class="proof-strip">
@@ -249,8 +251,16 @@ function resultsView() {
   total = subtotal + finalShipping + finalTax + finalContingency;
   const remaining = state.budget - total;
   const overBudget = total > state.budget;
+  const cmp = plan?.comparison;
+  const measuredCompare = cmp ? `<section class="evaluation">
+        <div><span class="label">MEASURED VS SINGLE AGENT</span><h2>The swarm advantage, measured.</h2><p>This exact brief was also given to one solo Qwen agent with identical web-search tools, run live in parallel as a control. Both packages were scored by the same deterministic validators — nothing scripted.${cmp.parallel_speedup > 1 ? ` Running the specialists in parallel was ${cmp.parallel_speedup}× faster than running them one at a time.` : ''}</p></div>
+        <div class="compare">
+          <div class="single"><span>SINGLE AGENT (CONTROL)</span><b>${cmp.single ? `${cmp.single.verified_links} live listing${cmp.single.verified_links === 1 ? '' : 's'}` : 'RUN FAILED'}</b><p>${cmp.single ? `${cmp.single.items} items · ${money(cmp.single.landed_total)} landed · ${cmp.single.budget_valid ? 'inside budget' : 'OVER budget'} · ${cmp.single.seconds}s` : 'The solo agent returned no usable package for this brief.'}</p></div>
+          <div class="multi"><span>SUPPLYSWARM</span><b>${cmp.swarm.verified_links} live listing${cmp.swarm.verified_links === 1 ? '' : 's'}</b><p>${cmp.swarm.items} items · ${money(cmp.swarm.landed_total)} landed · ${cmp.swarm.budget_valid ? 'inside budget' : 'over budget'} · ${cmp.swarm.seconds}s</p></div>
+        </div>
+      </section>` : '';
   const insight = plan
-    ? `<section class="evaluation">
+    ? `${measuredCompare}<section class="evaluation">
         <div><span class="label">QWEN SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2><p>Generated live by Qwen Cloud${plan.revised ? ' — the critic caught an over-budget package and revised it before approval.' : '.'}</p></div>
         <div class="findings">
           <div><span>RISKS</span><ul>${plan.risks.map(r => `<li>${r}</li>`).join('') || '<li>No blocking risks recorded.</li>'}</ul></div>
@@ -274,14 +284,14 @@ function resultsView() {
     <section class="result-grid">
       <div class="package-card">
         <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div><button data-restart>NEW BRIEF</button></div>
-        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[0]}</h3><p>${item[1]}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[5] ? `<a href="${item[5]}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a>` : item[0]}</h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span>${item[5] ? '<span class="tag-link">ALIBABA.COM</span>' : ''}</div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
       </div>
       <aside class="cost-card">
         <span class="label">LANDED COST ESTIMATE</span><div class="total"><small>Package total</small><strong>${money(total)}</strong><span>of ${money(state.budget)}</span></div>
         <div class="budget-meter"><i style="width:${Math.min(100, total / state.budget * 100)}%"></i></div>
         <div class="remaining"><span>Budget ${overBudget ? 'exceeded by' : 'remaining'}</span><b>${money(Math.abs(remaining))}</b></div>
         <dl><div><dt>Products</dt><dd>${money(subtotal)}</dd></div><div><dt>Shipping estimate</dt><dd>${money(finalShipping)}</dd></div><div><dt>VAT & duties estimate</dt><dd>${money(finalTax)}</dd></div><div><dt>Contingency</dt><dd>${money(finalContingency)}</dd></div></dl>
-        <p class="estimate-note">${plan ? 'Prices are live Qwen model estimates, not supplier quotations. Verify against real listings before purchasing.' : 'Estimates are indicative, not supplier quotations. Demo catalogue data is clearly separated from live marketplace data.'}</p>
+        <p class="estimate-note">${plan ? 'Linked items point to real Alibaba.com listings found by Qwen live web search; unlinked lines are labelled estimates. Confirm prices and MOQ on the listing before purchasing.' : 'Estimates are indicative, not supplier quotations. Demo catalogue data is clearly separated from live marketplace data.'}</p>
       </aside>
     </section>
     ${insight}
@@ -441,7 +451,7 @@ async function recordingToWav(blob) {
 function showAbout() {
   const dialog = document.createElement('dialog');
   dialog.className = 'about-dialog';
-  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division, specialist sourcing, deterministic cost calculation, critic-led revision, and human approval gates.</p><p>This hosted build uses a transparent demo catalogue. Live Qwen, Alibaba MCP, voice, image generation and supplier actions require server credentials and are never simulated as live.</p>`;
+  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division: each specialist agent runs its own Qwen call with live web search against Alibaba.com, real listing links are verified against the search results, a deterministic calculator handles landed costs, and a Critic agent revises over-budget packages.</p><p>Without a Qwen Cloud key the app falls back to a transparent demo catalogue — nothing is ever simulated as live.</p>`;
   document.body.append(dialog); dialog.showModal();
   dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
 }
@@ -450,15 +460,15 @@ const PHASE_NAMES = ['VALIDATING BRIEF', 'SPAWNING SPECIALISTS', 'SOURCING CANDI
 
 function buildEvents() {
   return [
-    ['Coordinator', 'Structured brief validated. No blocking questions.', 8],
-    [state.scenario.agents[0][1], `Searching ${state.scenario.items[0][0].toLowerCase()} candidates.`, 20],
-    [state.scenario.agents[1][1], 'Rejected 9 listings with incompatible specifications.', 34],
-    [state.scenario.agents[2][1], 'Supplier and MOQ evidence attached to shortlist.', 48],
-    [state.scenario.agents[3][1], 'Calculating shipping, VAT and landed cost estimates.', 61],
-    ['Critic', 'Budget conflict detected: first package is 10.7% over ceiling.', 72],
-    [state.scenario.agents[0][1], 'Revised package with mixed-tier equipment.', 84],
-    ['Critic', 'All essentials covered. Evidence and uncertainty labels verified.', 96],
-    ['Coordinator', 'Package approved. Preparing your launch plan.', 100]
+    ['Coordinator', 'Structured brief validated. No blocking questions.', 8, 'Swarm'],
+    [state.scenario.agents[0][1], `Searching ${state.scenario.items[0][0].toLowerCase()} candidates.`, 20, 'Coordinator'],
+    [state.scenario.agents[1][1], 'Rejected 9 listings with incompatible specifications.', 34, 'Coordinator'],
+    [state.scenario.agents[2][1], 'Supplier and MOQ evidence attached to shortlist.', 48, state.scenario.agents[0][1]],
+    [state.scenario.agents[3][1], 'Calculating shipping, VAT and landed cost estimates.', 61, 'Coordinator'],
+    ['Critic', 'Budget conflict detected: first package is 10.7% over ceiling.', 72, 'Swarm'],
+    [state.scenario.agents[0][1], 'Revised package with mixed-tier equipment.', 84, 'Critic'],
+    ['Critic', 'All essentials covered. Evidence and uncertainty labels verified.', 96, 'Coordinator'],
+    ['Coordinator', 'Package approved. Preparing your launch plan.', 100, 'Swarm']
   ];
 }
 
@@ -495,25 +505,29 @@ async function generateConceptImage(event) {
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function pushConsoleEvent(index, who, text, warning = false) {
+function pushConsoleEvent(index, who, text, warning = false, to = '') {
   const feed = document.querySelector('#events');
   if (!feed) return;
   const row = document.createElement('div');
   row.className = `event ${warning ? 'warning' : ''}`;
-  row.innerHTML = `<time>${String(index + 1).padStart(2, '0')}:${String((index * 7) % 60).padStart(2, '0')}</time><b>${who}</b><p>${text}</p>`;
+  row.innerHTML = `<time>${String(index + 1).padStart(2, '0')}:${String((index * 7) % 60).padStart(2, '0')}</time><b>${who}${to ? ` → ${to}` : ''}</b><p>${text}</p>`;
   feed.prepend(row);
 }
 
 async function playTimeline(events) {
   const agentTotal = state.scenario.agents.length;
   for (let i = 0; i < events.length; i++) {
-    const [who, text, progress] = events[i];
-    if (i < agentTotal) {
-      document.querySelector(`[data-agent="${i}"]`)?.classList.add('active'); document.querySelector(`[data-node="${i}"]`)?.classList.add('active');
+    const [who, text, progress, to] = events[i];
+    // Light up the panel entry for whichever agent is actually speaking.
+    const speakerIndex = state.scenario.agents.findIndex(a =>
+      a[1].toLowerCase() === String(who).toLowerCase() || a[0].toLowerCase() === String(who).toLowerCase());
+    if (speakerIndex >= 0) {
+      document.querySelector(`[data-agent="${speakerIndex}"]`)?.classList.add('active');
+      document.querySelector(`[data-node="${speakerIndex}"]`)?.classList.add('active');
       const counter = document.querySelector('#agent-count');
-      if (counter) counter.textContent = `${i + 1} / ${agentTotal}`;
+      if (counter) counter.textContent = `${document.querySelectorAll('.agent.active').length} / ${agentTotal}`;
     }
-    pushConsoleEvent(i, who, text, /critic/i.test(who));
+    pushConsoleEvent(i, who, text, /critic/i.test(who), to);
     const phaseIndex = Math.min(PHASE_NAMES.length - 1, Math.floor(i / Math.max(1, events.length - 1) * (PHASE_NAMES.length - 1)));
     const label = document.querySelector('#phase-label');
     if (label) label.textContent = PHASE_NAMES[phaseIndex];
@@ -527,7 +541,8 @@ async function playTimeline(events) {
 const PLANNING_LINES = [
   'Qwen Coordinator is analysing your brief…',
   'Designing your specialist agent team…',
-  'Estimating realistic equipment prices…',
+  'Specialists are searching Alibaba.com live for real listings…',
+  'Verifying listing links, prices and suppliers…',
   'Fitting the package inside your budget envelope…',
   'Running critic review on the draft package…'
 ];
@@ -580,8 +595,11 @@ async function runSwarm3D() {
       <div class="xr-canvas" id="xr-canvas"></div>
       <div class="xr-hud">
         <div class="xr-hud-top">
-          <div class="xr-brief"><span>3D OPS ROOM</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em></div>
+          <div class="xr-brief"><span>3D OPS ROOM</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em>
+            <button class="xr-code" id="xr-code" hidden title="Enter this code at /connect on your phone to watch and steer the swarm">PHONE LINK <b id="xr-code-value"></b><span>${window.location.host}/connect</span></button>
+          </div>
           <div class="xr-hud-buttons">
+            <button class="xr-btn" id="xr-ar" hidden>PASSTHROUGH AR</button>
             <button class="xr-btn" id="xr-vr" hidden>ENTER VR</button>
             <button class="xr-btn ghost" id="xr-back">EXIT 3D</button>
           </div>
@@ -596,12 +614,44 @@ async function runSwarm3D() {
           <button class="xr-btn done" id="xr-results" hidden>VIEW LAUNCH PLAN ↗</button>
         </div>
       </div>
-      <p class="xr-hint">Hold the centre robot to talk · drag to orbit · scroll to zoom</p>
+      <p class="xr-hint">Hold the centre robot to talk · tap any robot to inspect it · drag to orbit · scroll to zoom</p>
     </main>`;
   window.scrollTo(0, 0);
   document.querySelector('[data-about]').addEventListener('click', showAbout);
   let room = null;
-  document.querySelector('#xr-back').addEventListener('click', () => { room?.dispose(); showBrief(); });
+
+  // Companion link: a phone at /connect can pair with this session's code to
+  // watch every agent live and send requests into the room.
+  const live = createHostLink();
+  live.onCode = code => {
+    const chip = document.querySelector('#xr-code');
+    const value = document.querySelector('#xr-code-value');
+    if (chip && value) {
+      value.textContent = code;
+      chip.hidden = false;
+      chip.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(`${window.location.origin}/connect/${code}`);
+          const original = value.textContent;
+          value.textContent = 'COPIED';
+          setTimeout(() => { value.textContent = original; }, 1200);
+        } catch {}
+      };
+    }
+  };
+  live.onRequest = ({ to, text }) => {
+    room?.relayRequest(to, text);
+    const feed = document.querySelector('#xr-feed');
+    if (feed) {
+      const row = document.createElement('div');
+      row.className = 'xr-event phone';
+      row.innerHTML = `<b>Phone → ${to || 'Hub'}</b><p>${String(text).slice(0, 140)}</p>`;
+      feed.prepend(row);
+      while (feed.children.length > 3) feed.lastChild.remove();
+    }
+  };
+
+  document.querySelector('#xr-back').addEventListener('click', () => { live.close(); room?.dispose(); showBrief(); });
 
   const { launchOpsRoom } = await import('./xr-room.js');
   if (!document.querySelector('#xr-canvas')) return;
@@ -611,18 +661,21 @@ async function runSwarm3D() {
     phaseNames: PHASE_NAMES,
     money,
     onComplete: () => {
+      live.send({ type: 'status', status: { text: 'Launch plan ready', phase: 'COMPLETE', progress: 100 } });
       const btn = document.querySelector('#xr-results');
       if (btn) { btn.hidden = false; }
     },
     onExit: null
   });
 
-  room.callbacks.onEvent = ({ who, text, progress, phase }) => {
+  room.callbacks.onEvent = ({ who, to, text, progress, phase }) => {
+    live.send({ type: 'event', event: [who, text, progress, to || ''] });
+    live.send({ type: 'status', status: { text, phase, progress } });
     const feed = document.querySelector('#xr-feed');
     if (!feed) return;
     const row = document.createElement('div');
     row.className = `xr-event ${/critic/i.test(who) ? 'warning' : ''}`;
-    row.innerHTML = `<b>${who}</b><p>${text}</p>`;
+    row.innerHTML = `<b>${who}${to ? ` → ${to}` : ''}</b><p>${text}</p>`;
     feed.prepend(row);
     while (feed.children.length > 3) feed.lastChild.remove();
     document.querySelector('#xr-phase-label').textContent = phase;
@@ -655,27 +708,51 @@ async function runSwarm3D() {
     const ask = document.querySelector('#xr-ask');
     if (ask) ask.hidden = true;
     parseBrief(trimmed);
+    live.send({
+      type: 'brief',
+      brief: { type: state.scenario.type, city: state.city, budget: state.budget, team: state.team, text: trimmed.slice(0, 280) },
+      agents: [],
+      status: { text: 'Qwen Coordinator is planning…', phase: 'PLANNING', progress: 4 }
+    });
     if (api.live) {
       setPhase('QWEN COORDINATOR PLANNING');
       let lineIndex = 0;
       room.setStatus(PLANNING_LINES[0]);
-      const ticker = setInterval(() => { lineIndex++; room.setStatus(PLANNING_LINES[lineIndex % PLANNING_LINES.length]); }, 2400);
+      const ticker = setInterval(() => {
+        lineIndex++;
+        const line = PLANNING_LINES[lineIndex % PLANNING_LINES.length];
+        room.setStatus(line);
+        live.send({ type: 'status', status: { text: line, phase: 'PLANNING', progress: Math.min(16, 4 + lineIndex * 2) } });
+      }, 2400);
       try {
         const plan = await api.plan(trimmed);
         clearInterval(ticker);
         applyPlan(plan);
         setHudBrief('live Qwen plan');
+        live.send({
+          type: 'brief',
+          brief: { type: plan.business_type, city: state.city, budget: state.budget, team: state.team, text: trimmed.slice(0, 280) },
+          agents: plan.agents,
+          status: { text: 'Specialists reporting in…', phase: 'RUNNING', progress: 8 }
+        });
+        live.send({ type: 'plan', plan });
+        // Concept image for the companion's PDF report (and the results page).
+        api.image({ business: plan.business_type, city: state.city, items: state.scenario.items.map(item => item[0]) })
+          .then(({ url }) => { state.conceptImage = url; live.send({ type: 'image', url }); })
+          .catch(() => {});
         room.begin(state.scenario, plan.events, { type: state.scenario.type, budget: state.budget });
       } catch (err) {
         clearInterval(ticker);
         setHudBrief(`live planning unavailable · demo catalogue`);
         room.setStatus(`Live planning unavailable — showing the demo catalogue`);
         console.warn('Live planning failed:', err.message);
+        live.send({ type: 'agents', agents: state.scenario.agents });
         await wait(1600);
         room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget });
       }
     } else {
       setHudBrief('demo catalogue');
+      live.send({ type: 'agents', agents: state.scenario.agents });
       room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget });
     }
   }
@@ -729,13 +806,24 @@ async function runSwarm3D() {
     await finishVoiceBrief();
   };
 
-  if (await room.vrSupported()) {
+  const [vrOK, arOK] = await Promise.all([room.vrSupported(), room.arSupported()]);
+  if (vrOK) {
     const vrBtn = document.querySelector('#xr-vr');
     vrBtn.hidden = false;
     vrBtn.addEventListener('click', () => room.enterVR());
   }
-  document.querySelector('#xr-results').addEventListener('click', () => { room.dispose(); showResults(); });
+  if (arOK) {
+    const arBtn = document.querySelector('#xr-ar');
+    arBtn.hidden = false;
+    arBtn.addEventListener('click', () => room.enterAR());
+  }
+  document.querySelector('#xr-results').addEventListener('click', () => { live.close(); room.dispose(); showResults(); });
 }
 
-showBrief();
-api.init();
+const connectMatch = window.location.pathname.match(/^\/connect(?:\/([A-Za-z0-9]{4,8}))?\/?$/i);
+if (connectMatch) {
+  import('./connect.js').then(module => module.showConnect(app, (connectMatch[1] || '').toUpperCase()));
+} else {
+  showBrief();
+  api.init();
+}

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MODELS, liveMode, transcribe, generateImage, QwenError } from './qwen.js';
 import { createPlan } from './planner.js';
+import { attachLive } from './live.js';
 
 const app = express();
 app.use(express.json({ limit: '15mb' })); // voice clips arrive as base64
@@ -59,6 +60,21 @@ app.post('/api/image', asyncRoute(async (req, res) => {
   res.json({ url });
 }));
 
+// Fetch the Qwen-hosted concept image server-side so the companion's PDF can
+// embed it without cross-origin canvas tainting. Restricted to DashScope OSS.
+app.get('/api/image-proxy', asyncRoute(async (req, res) => {
+  let url;
+  try { url = new URL(String(req.query.url || '')); } catch { return res.status(400).json({ error: 'Invalid URL' }); }
+  if (url.protocol !== 'https:' || !/(^|\.)aliyuncs\.com$/.test(url.hostname)) {
+    return res.status(400).json({ error: 'Host not allowed' });
+  }
+  const upstream = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  if (!upstream.ok) return res.status(502).json({ error: 'Image fetch failed' });
+  res.set('Content-Type', upstream.headers.get('content-type') || 'image/png');
+  res.set('Cache-Control', 'private, max-age=3600');
+  res.send(Buffer.from(await upstream.arrayBuffer()));
+}));
+
 // Static frontend (vite build output)
 const root = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(root, '..', 'dist');
@@ -66,6 +82,7 @@ app.use(express.static(dist));
 app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(dist, 'index.html')));
 
 const port = Number(process.env.PORT) || 8787;
-app.listen(port, '0.0.0.0', () => {
+const server = app.listen(port, '0.0.0.0', () => {
   console.log(`SupplySwarm server on :${port} — live mode: ${liveMode() ? `ON (${MODELS.text}, ${MODELS.asr}, ${MODELS.image})` : 'OFF (demo catalogue)'}`);
 });
+attachLive(server);
