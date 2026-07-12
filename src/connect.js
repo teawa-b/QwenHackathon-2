@@ -3,8 +3,9 @@ import { createCompanionLink } from './live.js';
 // Companion dashboard (/connect): pair a phone with a running VR/3D swarm
 // session by code — watch every agent live, inspect them, send requests to a
 // specific agent or the Hub, and download the final plan as a PDF.
+// Deliberately minimal: soft surfaces, pills, no hard edges.
 
-const ACCENTS = ['#b8f632', '#55e6b1', '#ff9a6e', '#7dd3fc', '#c4b5fd', '#f9a8d4', '#fde68a'];
+const ACCENTS = ['#b8f632', '#55e6b1', '#ffb08a', '#7dd3fc', '#c4b5fd', '#f9a8d4', '#fde68a'];
 
 const money = value =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(value);
@@ -13,38 +14,35 @@ const esc = value => String(value ?? '')
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
 export function showConnect(app, prefillCode) {
+  document.body.classList.add('connect-mode');
   let link = null;
   const state = {
     code: prefillCode || '',
     data: null,          // server snapshot: {brief, agents, events, requests, plan, image, status}
     hostOnline: true,
-    selected: 'HUB',     // selected bubble: 'HUB' or agent name
-    toast: null
+    selected: 'HUB'      // selected chip: 'HUB' or agent name
   };
 
-  function header(sub) {
-    return `<header class="topbar">
-      <a class="brand" href="/" aria-label="SupplySwarm home"><span class="brand-mark"><i></i><i></i><i></i></span><span>SUPPLY<em>SWARM</em></span></a>
-      <div class="mode"><span></span> <b>${sub}</b></div>
-      <a class="menu" href="/" aria-label="Back to SupplySwarm">×</a>
-    </header>`;
-  }
+  const header = right => `<header class="c-top">
+    <a class="c-brand" href="/"><span></span>SupplySwarm</a>
+    ${right ? `<div class="c-session">${right}</div>` : ''}
+  </header>`;
 
   // ---------- Pairing screen ----------
   function renderEntry(error = '') {
-    app.innerHTML = `${header('PAIR A SESSION')}
-    <main class="connect-shell">
-      <section class="pair-card">
-        <div class="pair-orb" aria-hidden="true"><i></i><i></i><b>◈</b></div>
-        <h1>Join the swarm<br><strong>from this device.</strong></h1>
-        <p>Enter the 5-letter code shown in the 3D ops room — top-left, next to “PHONE LINK”.</p>
+    app.innerHTML = `${header('')}
+    <main class="c-shell">
+      <section class="c-pair">
+        <div class="c-orb" aria-hidden="true"><i></i><i></i><b>◈</b></div>
+        <h1>Join a live swarm</h1>
+        <p>Enter the 5-letter code shown in the 3D ops room, next to “Phone link”.</p>
         <form id="pair-form">
           <input id="pair-code" inputmode="latin" autocomplete="one-time-code" autocapitalize="characters"
-                 spellcheck="false" maxlength="5" placeholder="•••••" value="${esc(state.code)}" aria-label="Connect code">
-          <button type="submit">CONNECT <b>↗</b></button>
+                 spellcheck="false" maxlength="5" placeholder="·····" value="${esc(state.code)}" aria-label="Connect code">
+          <button type="submit">Connect</button>
         </form>
-        <p class="pair-error" ${error ? '' : 'hidden'}>${esc(error)}</p>
-        <p class="pair-hint">The code appears when someone opens the 3D Ops Room on this site.</p>
+        <p class="c-error" ${error ? '' : 'hidden'}>${esc(error)}</p>
+        <p class="c-hint">The code appears whenever someone opens the 3D Ops Room on this site.</p>
       </section>
     </main>`;
     const input = app.querySelector('#pair-code');
@@ -72,9 +70,11 @@ export function showConnect(app, prefillCode) {
   }
 
   function renderConnecting() {
-    app.innerHTML = `${header('PAIRING…')}
-    <main class="connect-shell"><section class="pair-card"><div class="pair-orb wait" aria-hidden="true"><i></i><i></i><b>◈</b></div>
-    <h1>Connecting to<br><strong>${esc(state.code)}</strong>…</h1></section></main>`;
+    app.innerHTML = `${header('')}
+    <main class="c-shell"><section class="c-pair">
+      <div class="c-orb wait" aria-hidden="true"><i></i><i></i><b>◈</b></div>
+      <h1>Connecting to ${esc(state.code)}…</h1>
+    </section></main>`;
   }
 
   // ---------- Live message handling ----------
@@ -95,7 +95,7 @@ export function showConnect(app, prefillCode) {
         return;
       case 'agents': state.data.agents = message.agents || []; renderDashboard(); return;
       case 'status': state.data.status = message.status; updateStatus(); return;
-      case 'event': state.data.events.push(message.event); addFeedRow(message.event); pulseBubble(message.event[0]); updateDetail(); return;
+      case 'event': state.data.events.push(message.event); addFeedRow(message.event); pulseChip(message.event[0]); updateDetail(); return;
       case 'plan': state.data.plan = message.plan; updateResults(); updateDetail(); setToast('Launch plan ready — results below'); return;
       case 'image': state.data.image = message.url; updateResults(); return;
       case 'request': state.data.requests.push(message); addFeedRow(['Phone', message.text, null, message.to], true); return;
@@ -115,44 +115,43 @@ export function showConnect(app, prefillCode) {
     const d = state.data;
     const brief = d.brief;
     const agents = d.agents || [];
-    app.innerHTML = `${header(`LINKED · ${esc(state.code)}`)}
+    app.innerHTML = `${header(`Linked <b>${esc(state.code)}</b>`)}
     <main class="companion">
-      <section class="companion-head">
-        <div>
-          <span class="label">LIVE SWARM SESSION</span>
-          <h1 id="c-title">${esc(brief?.type || 'Waiting for a brief…')}</h1>
-          <p id="c-sub">${brief ? `${esc(brief.city || 'UK')} · ${money(brief.budget || 0)} ceiling · ${brief.team || 1} people` : 'Ask the headset wearer to speak or type their business idea.'}</p>
-        </div>
-        <div class="c-status"><i id="c-progress"></i><span id="c-phase">${esc(d.status?.phase || 'IDLE')}</span></div>
+      <section class="c-head">
+        <p class="c-label">Live session</p>
+        <h1 id="c-title">${esc(brief?.type || 'Waiting for a brief…')}</h1>
+        <p class="c-muted" id="c-sub">${brief ? `${esc(brief.city || 'UK')} · ${money(brief.budget || 0)} ceiling · ${brief.team || 1} people` : 'Ask the headset wearer to speak or type their business idea.'}</p>
+        <div class="c-progress-track"><i id="c-progress"></i></div>
+        <p class="c-phase" id="c-phase">${esc(d.status?.phase || 'Idle')}</p>
       </section>
 
-      <section class="bubble-field" id="bubbles" aria-label="Swarm agents">
-        <button class="agent-bubble is-hub ${state.selected === 'HUB' ? 'selected' : ''}" data-bubble="HUB" style="--accent:#b8f632">
-          <b>HUB</b><span>Coordinator</span>
+      <section class="agent-row" id="chips" aria-label="Swarm agents">
+        <button class="agent-chip is-hub ${state.selected === 'HUB' ? 'selected' : ''}" data-bubble="HUB" style="--accent:#b8f632">
+          <span class="chip-avatar"><b>HUB</b></span><span class="chip-name">Coordinator</span>
         </button>
         ${agents.map((agent, i) => `
-          <button class="agent-bubble ${state.selected === agent[1] ? 'selected' : ''}" data-bubble="${esc(agent[1])}" style="--accent:${agentAccent(i)}">
-            <b>${esc(agent[0])}</b><span>${esc(agent[1])}</span>
+          <button class="agent-chip ${state.selected === agent[1] ? 'selected' : ''}" data-bubble="${esc(agent[1])}" style="--accent:${agentAccent(i)}">
+            <span class="chip-avatar"><b>${esc(agent[0])}</b></span><span class="chip-name">${esc(agent[1])}</span>
           </button>`).join('')}
-        ${agents.length ? '' : '<p class="bubble-empty">Agents appear here the moment the Coordinator assembles the team.</p>'}
+        ${agents.length ? '' : '<p class="chips-empty">Agents appear here once the Coordinator assembles the team.</p>'}
       </section>
 
-      <section class="companion-detail" id="detail"></section>
+      <section class="c-card companion-detail" id="detail"></section>
 
-      <section class="composer">
-        <span class="label">SEND A REQUEST → <b id="composer-target">${esc(state.selected === 'HUB' ? 'Hub (Coordinator)' : state.selected)}</b></span>
+      <section class="c-card composer">
+        <p class="c-label">Request → <b id="composer-target">${esc(state.selected === 'HUB' ? 'Hub' : state.selected)}</b></p>
         <form id="composer-form">
           <input id="composer-text" maxlength="200" autocomplete="off"
-                 placeholder="${state.selected === 'HUB' ? 'e.g. Keep the total under £12k…' : `e.g. Prefer a cheaper option for this category…`}">
-          <button type="submit" ${state.hostOnline ? '' : 'disabled'}>SEND</button>
+                 placeholder="${state.selected === 'HUB' ? 'e.g. Keep the total under £12k…' : 'e.g. Prefer a cheaper option here…'}">
+          <button type="submit" ${state.hostOnline ? '' : 'disabled'}>Send</button>
         </form>
-        <p class="composer-note">Requests appear instantly in the 3D room above the ${state.selected === 'HUB' ? 'Coordinator' : 'agent'} — the wearer sees exactly what you wrote.</p>
+        <p class="composer-note">Your message appears instantly above the ${state.selected === 'HUB' ? 'Coordinator' : 'agent'} in the 3D room.</p>
       </section>
 
       <section class="companion-results" id="results"></section>
 
-      <section class="companion-feed-wrap">
-        <span class="label">LIVE AGENT DIALOGUE</span>
+      <section class="c-card feed-card">
+        <p class="c-label">Live dialogue</p>
         <div class="companion-feed" id="c-feed" aria-live="polite"></div>
       </section>
       <div class="c-toast" id="c-toast" hidden></div>
@@ -162,7 +161,9 @@ export function showConnect(app, prefillCode) {
       state.selected = button.dataset.bubble;
       app.querySelectorAll('[data-bubble]').forEach(b => b.classList.toggle('selected', b === button));
       const target = app.querySelector('#composer-target');
-      if (target) target.textContent = state.selected === 'HUB' ? 'Hub (Coordinator)' : state.selected;
+      if (target) target.textContent = state.selected === 'HUB' ? 'Hub' : state.selected;
+      const note = app.querySelector('.composer-note');
+      if (note) note.textContent = `Your message appears instantly above the ${state.selected === 'HUB' ? 'Coordinator' : state.selected + ' agent'} in the 3D room.`;
       updateDetail();
     }));
 
@@ -172,7 +173,7 @@ export function showConnect(app, prefillCode) {
       const text = input.value.trim();
       if (!text) return;
       const ok = link.sendRequest(state.selected === 'HUB' ? 'Hub' : state.selected, text);
-      if (ok) { input.value = ''; setToast(`Sent to ${state.selected === 'HUB' ? 'the Hub' : state.selected} ✓`); }
+      if (ok) { input.value = ''; setToast(`Sent to ${state.selected === 'HUB' ? 'the Hub' : state.selected}`); }
       else setToast('Not connected — trying to reconnect…', true);
     });
 
@@ -189,7 +190,7 @@ export function showConnect(app, prefillCode) {
     const status = state.data?.status;
     const phase = app.querySelector('#c-phase');
     const bar = app.querySelector('#c-progress');
-    if (phase && status?.phase) phase.textContent = status.phase;
+    if (phase && status?.phase) phase.textContent = String(status.phase).toLowerCase().replace(/^./, c => c.toUpperCase());
     if (bar) bar.style.width = `${Math.max(2, Math.min(100, Number(status?.progress) || 0))}%`;
   }
 
@@ -203,13 +204,13 @@ export function showConnect(app, prefillCode) {
     while (feed.children.length > 40) feed.lastChild.remove();
   }
 
-  function pulseBubble(who) {
+  function pulseChip(who) {
     const name = /coordinator|swarm|hub/i.test(String(who)) ? 'HUB' : String(who);
-    const bubble = app.querySelector(`[data-bubble="${CSS.escape(name)}"]`);
-    if (!bubble) return;
-    bubble.classList.remove('talking');
-    void bubble.offsetWidth; // restart the animation
-    bubble.classList.add('talking');
+    const chip = app.querySelector(`[data-bubble="${CSS.escape(name)}"]`);
+    if (!chip) return;
+    chip.classList.remove('talking');
+    void chip.offsetWidth; // restart the animation
+    chip.classList.add('talking');
   }
 
   function updateDetail() {
@@ -232,9 +233,9 @@ export function showConnect(app, prefillCode) {
     const spend = lines.reduce((sum, item) => sum + (Number(item[2]) || 0), 0);
     detail.innerHTML = `
       <div class="detail-head" style="--accent:${agentAccent(index)}"><b>${esc(agent[0])}</b><div><strong>${esc(agent[1])}</strong><span>${esc(agent[2] || '')}</span></div></div>
-      ${thoughts.length ? `<div class="detail-block"><span>THINKING</span><ul>${thoughts.map(thought => `<li>${esc(thought)}</li>`).join('')}</ul></div>` : ''}
-      ${said.length ? `<div class="detail-block"><span>LAST SAID</span><ul>${said.map(event => `<li>“${esc(event[1])}”</li>`).join('')}</ul></div>` : '<p class="detail-live">No dialogue from this agent yet.</p>'}
-      ${lines.length ? `<div class="detail-block"><span>SOURCED · ${money(spend)}</span><ul>${lines.map(item => `<li>${esc(item[0])} — ${money(item[2])}${item[5] ? ` · <a href="${esc(item[5])}" target="_blank" rel="noopener noreferrer">listing ↗</a>` : ''}</li>`).join('')}</ul></div>` : ''}`;
+      ${thoughts.length ? `<div class="detail-block"><p class="c-label">Thinking</p><ul>${thoughts.map(thought => `<li>${esc(thought)}</li>`).join('')}</ul></div>` : ''}
+      ${said.length ? `<div class="detail-block"><p class="c-label">Last said</p><ul>${said.map(event => `<li>“${esc(event[1])}”</li>`).join('')}</ul></div>` : '<p class="detail-live">No dialogue from this agent yet.</p>'}
+      ${lines.length ? `<div class="detail-block"><p class="c-label">SOURCED · ${money(spend)}</p><ul>${lines.map(item => `<li>${esc(item[0])} — ${money(item[2])}${item[5] ? ` · <a href="${esc(item[5])}" target="_blank" rel="noopener noreferrer">listing ↗</a>` : ''}</li>`).join('')}</ul></div>` : ''}`;
   }
 
   function updateResults() {
@@ -244,23 +245,25 @@ export function showConnect(app, prefillCode) {
     if (!plan) { results.innerHTML = ''; return; }
     const cost = plan.landed_cost || {};
     const cmp = plan.comparison;
+    const liveCount = plan.items.filter(item => item[5]).length;
     results.innerHTML = `
-      <div class="results-card">
-        <div class="results-top">
-          <div><span class="label">LAUNCH PLAN READY</span><h2>${money(cost.total || 0)} <em>of ${money(cost.budget || plan.budget_gbp || 0)}</em></h2>
-          <p>${plan.items.length} items · ${plan.items.filter(item => item[5]).length} live Alibaba listing${plan.items.filter(item => item[5]).length === 1 ? '' : 's'} · ${cost.valid ? 'inside budget ✓' : 'over budget ⚠'}</p></div>
-          <button class="pdf-btn" id="pdf-btn">DOWNLOAD PDF ⤓</button>
-        </div>
+      <div class="c-card results-card">
+        <p class="c-label">Launch plan ready</p>
+        <h2>${money(cost.total || 0)} <em>of ${money(cost.budget || plan.budget_gbp || 0)}</em></h2>
+        <p class="c-muted">${plan.items.length} items · ${liveCount} live Alibaba listing${liveCount === 1 ? '' : 's'} · ${cost.valid ? 'inside budget' : 'over budget'}</p>
         ${state.data.image ? `<figure class="results-visual"><img src="${esc(state.data.image)}" alt="AI concept visual of the finished business"></figure>` : ''}
         ${cmp ? `<div class="results-compare">
-          <div><span>SINGLE AGENT (CONTROL)</span><b>${cmp.single ? `${cmp.single.verified_links} live links` : 'RUN FAILED'}</b><p>${cmp.single ? `${money(cmp.single.landed_total)} · ${cmp.single.budget_valid ? 'inside budget' : 'OVER budget'} · ${cmp.single.seconds}s` : 'No usable package'}</p></div>
-          <div class="win"><span>SUPPLYSWARM</span><b>${cmp.swarm.verified_links} live links</b><p>${money(cmp.swarm.landed_total)} · ${cmp.swarm.budget_valid ? 'inside budget' : 'over budget'} · ${cmp.swarm.seconds}s</p></div>
+          <div><div><span>SINGLE AGENT (CONTROL)</span><b>${cmp.single ? `${cmp.single.verified_links} live links` : 'Run failed'}</b></div><p>${cmp.single ? `${money(cmp.single.landed_total)} · ${cmp.single.budget_valid ? 'inside budget' : 'over budget'} · ${cmp.single.seconds}s` : 'No usable package'}</p></div>
+          <div class="win"><div><span>SUPPLYSWARM</span><b>${cmp.swarm.verified_links} live links</b></div><p>${money(cmp.swarm.landed_total)} · ${cmp.swarm.budget_valid ? 'inside budget' : 'over budget'} · ${cmp.swarm.seconds}s</p></div>
         </div>` : ''}
-        <div class="results-items">${plan.items.map((item, i) => `
-          <div class="r-item"><span>${String(i + 1).padStart(2, '0')}</span>
-            <div><b>${item[5] ? `<a href="${esc(item[5])}" target="_blank" rel="noopener noreferrer">${esc(item[0])} ↗</a>` : esc(item[0])}</b><p>${esc(item[1])}${item[6] ? ` · ${esc(item[6])}` : ''}</p></div>
-            <strong>${money(item[2])}</strong></div>`).join('')}
+        <div class="results-items">${plan.items.map(item => `
+          <div class="r-item">
+            <b>${item[5] ? `<a href="${esc(item[5])}" target="_blank" rel="noopener noreferrer">${esc(item[0])}</a>` : esc(item[0])}</b>
+            <strong>${money(item[2])}</strong>
+            <p>${esc(item[1])}${item[6] ? ` · ${esc(item[6])}` : ''}</p>
+          </div>`).join('')}
         </div>
+        <button class="pdf-btn" id="pdf-btn">DOWNLOAD PDF REPORT</button>
       </div>`;
     results.querySelector('#pdf-btn')?.addEventListener('click', async event => {
       const button = event.currentTarget;
@@ -268,7 +271,7 @@ export function showConnect(app, prefillCode) {
       try {
         const { downloadPlanPdf } = await import('./pdf.js');
         await downloadPlanPdf(plan, state.data.brief, state.data.image);
-        button.textContent = 'DOWNLOAD PDF ⤓';
+        button.textContent = 'DOWNLOAD PDF REPORT';
       } catch (err) {
         console.warn('PDF failed', err);
         button.textContent = 'PDF FAILED — RETRY';
