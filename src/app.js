@@ -609,7 +609,7 @@ async function runSwarm3D() {
           <button class="xr-btn done" id="xr-results" hidden>VIEW LAUNCH PLAN ↗</button>
         </div>
       </div>
-      <p class="xr-hint">Hold the centre robot to talk · drag to orbit · scroll to zoom</p>
+      <p class="xr-hint">Hold the centre robot to talk · tap any robot to inspect it · drag to orbit · scroll to zoom</p>
     </main>`;
   window.scrollTo(0, 0);
   document.querySelector('[data-about]').addEventListener('click', showAbout);

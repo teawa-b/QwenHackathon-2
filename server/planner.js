@@ -74,7 +74,8 @@ Respond with ONLY a JSON object:
       "evidence": "short label, e.g. 'Live Alibaba listing'"
     }
   ],
-  "report": "max 90 chars — your spoken status message to the Coordinator: what you found, on Alibaba, and roughly for how much"
+  "report": "max 90 chars — your spoken status message to the Coordinator: what you found, on Alibaba, and roughly for how much",
+  "thoughts": [ "2 or 3 strings, max 55 chars each — your ACTUAL reasoning steps while comparing listings, e.g. 'Two rack listings — picking the one with safety arms'" ]
 }
 
 Rules:
@@ -143,7 +144,7 @@ function cleanItems(rawItems, { sources = [], agentName = null, allowedUrls = nu
         evidence,
         url,
         supplier: item.supplier ? String(item.supplier).slice(0, 50) : null,
-        agent: agentName
+        agent: agentName || (item.agent ? String(item.agent).slice(0, 20) : null)
       };
     })
     .filter(item => item.title && item.price_gbp > 0);
@@ -205,10 +206,14 @@ export async function createPlan(text) {
   if (specialists.length < 2) {
     throw Object.assign(new Error('Qwen coordinator did not produce a specialist team'), { status: 502 });
   }
-  const supplierAgent = { code: 'SUP', name: 'Supplier', focus: 'Listing & MOQ verification' };
-  const criticAgent = { code: 'RISK', name: 'Critic', focus: 'Risk & budget control' };
-  const agents = [...specialists, supplierAgent, criticAgent]
-    .map(agent => [agent.code, agent.name, agent.focus]);
+  const supplierAgent = {
+    code: 'SUP', name: 'Supplier', focus: 'Listing & MOQ verification',
+    thoughts: ['Cross-checking every cited URL against search results…', 'Any link I did not see gets vetoed…', 'Attaching MOQ and seller pages to the shortlist…']
+  };
+  const criticAgent = {
+    code: 'RISK', name: 'Critic', focus: 'Risk & budget control',
+    thoughts: ['Watching the landed-cost ceiling…', 'Hunting for weak evidence labels…', 'Ready to cut nice-to-haves if we run hot…']
+  };
 
   const productBudget = Math.round(budget * PRODUCT_BUDGET_RATIO);
   const events = [
@@ -247,6 +252,8 @@ export async function createPlan(text) {
       const rawFound = Array.isArray(mission.value.json.items) ? mission.value.json.items : [];
       const found = cleanItems(rawFound, { sources: mission.value.sources, agentName: agent.name });
       items.push(...found);
+      agent.thoughts = (Array.isArray(mission.value.json.thoughts) ? mission.value.json.thoughts : [])
+        .map(thought => String(thought).slice(0, 60)).filter(Boolean).slice(0, 3);
       agent.spent = found.reduce((sum, item) => sum + item.price_gbp, 0);
       const liveCount = found.filter(item => item.url).length;
       const report = String(mission.value.json.report || '').slice(0, 90);
@@ -364,6 +371,11 @@ export async function createPlan(text) {
     text: cost.valid ? 'Package approved. Preparing your launch plan.' : 'Best available package prepared with budget risk flagged.'
   });
 
+  // Agent roster is finalised after the missions so each specialist's genuine
+  // LLM reasoning steps ride along as its 3D thought bubbles.
+  const agents = [...specialists, supplierAgent, criticAgent]
+    .map(agent => [agent.code, agent.name, agent.focus, agent.thoughts || []]);
+
   // Score both packages with the same deterministic validators. The swarm's
   // time is measured before waiting on the control run so it is not inflated.
   const swarmSeconds = (Date.now() - planStart) / 1000;
@@ -414,7 +426,7 @@ export async function createPlan(text) {
     team_size: Math.max(1, Math.round(Number(raw.team_size) || 1)),
     budget_gbp: budget,
     agents,
-    items: items.map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier]),
+    items: items.map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier, item.agent]),
     events: timeline,
     risks,
     assumptions: (raw.assumptions || []).map(String).slice(0, 5),

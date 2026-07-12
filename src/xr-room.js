@@ -25,7 +25,8 @@ function makeLabelSprite(code, name, accent) {
   return sprite;
 }
 
-function makeBubbleSprite(text, accent) {
+function makeBubbleSprite(text, accent, kind = 'speech') {
+  const thought = kind === 'thought';
   const canvas = document.createElement('canvas');
   canvas.width = 768; canvas.height = 232;
   const ctx = canvas.getContext('2d');
@@ -42,17 +43,29 @@ function makeBubbleSprite(text, accent) {
     }
   }
   const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
-  ctx.fillStyle = 'rgba(7,17,14,.92)';
-  ctx.beginPath(); ctx.roundRect(8, 8, 752, 216, 26); ctx.fill();
-  ctx.strokeStyle = accentCss; ctx.globalAlpha = .8; ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.roundRect(8, 8, 752, 216, 26); ctx.stroke(); ctx.globalAlpha = 1;
-  ctx.fillStyle = '#dce7dd'; ctx.font = '600 40px sans-serif'; ctx.textAlign = 'center';
-  const startY = 232 / 2 - (lines.length - 1) * 26 + 14;
-  lines.forEach((line, i) => ctx.fillText(line, 384, startY + i * 52));
+  ctx.fillStyle = thought ? 'rgba(10,20,16,.84)' : 'rgba(7,17,14,.92)';
+  ctx.beginPath(); ctx.roundRect(8, 8, 752, thought ? 186 : 216, thought ? 60 : 26); ctx.fill();
+  ctx.strokeStyle = accentCss; ctx.globalAlpha = thought ? .45 : .8; ctx.lineWidth = thought ? 4 : 5;
+  if (thought) ctx.setLineDash([16, 12]);
+  ctx.beginPath(); ctx.roundRect(8, 8, 752, thought ? 186 : 216, thought ? 60 : 26); ctx.stroke();
+  ctx.setLineDash([]);
+  if (thought) {
+    // Trailing "thought" dots toward the robot's head
+    for (const [x, y, r] of [[120, 216, 9], [90, 228, 6]]) {
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = thought ? '#9fb3a6' : '#dce7dd';
+  ctx.font = thought ? 'italic 500 36px sans-serif' : '600 40px sans-serif';
+  ctx.textAlign = 'center';
+  const boxHeight = thought ? 186 : 216;
+  const startY = (boxHeight + 16) / 2 - (lines.length - 1) * 26 + 12;
+  lines.forEach((line, i) => ctx.fillText(line, 384, startY + i * 50));
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
-  sprite.scale.set(1.9, 0.57, 1);
+  sprite.scale.set(thought ? 1.65 : 1.9, thought ? 0.5 : 0.57, 1);
   return sprite;
 }
 
@@ -243,6 +256,14 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       controls.enabled = false;
       callbacks.onHoldStart?.();
       e.preventDefault();
+      return;
+    }
+    // Tap a specialist robot to inspect its role, spend and current work.
+    for (const s of specialists) {
+      if (s.active && raycaster.intersectObject(s.bot, true).length) {
+        inspectSpecialist(s);
+        return;
+      }
     }
   }
   function onPointerUp() {
@@ -266,9 +287,18 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   }
   const onSelectStart = event => {
     const controller = event.target;
-    if (!controllerHitsCoordinator(controller)) return;
-    controller.userData.holdingCoordinator = true;
-    callbacks.onHoldStart?.();
+    if (controllerHitsCoordinator(controller)) {
+      controller.userData.holdingCoordinator = true;
+      callbacks.onHoldStart?.();
+      return;
+    }
+    // In VR, pointing at a specialist and pulling the trigger inspects it.
+    for (const s of specialists) {
+      if (s.active && raycaster.intersectObject(s.bot, true).length) {
+        inspectSpecialist(s);
+        return;
+      }
+    }
   };
   const onSelectEnd = event => {
     const controller = event.target;
@@ -339,8 +369,12 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   const EVENT_GAP = 2.4; // long enough to read each exchange
 
   // The coordinator counts as a conversation participant too.
-  const coordEntity = { isHub: true, bot: coordinator, accent: LIME };
-  const bubbles = []; // { sprite, entity, start, until }
+  const coordEntity = {
+    isHub: true, bot: coordinator, accent: LIME,
+    thoughts: ['Tracking spend across the whole swarm…', 'Merging shortlists into one package…', 'Waiting on specialist reports from Alibaba…'],
+    thoughtIndex: 0, nextThoughtAt: Infinity
+  };
+  const bubbles = []; // { sprite, entity, start, until, kind }
   const talks = [];   // { from, to, line, mesh, start } — agent-to-agent pulses
 
   function entityPosition(entity, out) {
@@ -384,9 +418,16 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       );
       beam.position.copy(bot.position).setY(2);
       scene.add(beam);
+      const focus = String(agent[2] || 'my category');
+      const thoughts = Array.isArray(agent[3]) && agent[3].length ? agent[3] : [
+        `Scanning Alibaba for ${focus.toLowerCase()}…`,
+        'Comparing unit prices and MOQ terms…',
+        'Attaching evidence to my shortlist…'
+      ];
       return {
         bot, label, link, pulse, beam, accent,
-        code: String(agent[0] || ''), name: String(agent[1] || ''),
+        code: String(agent[0] || ''), name: String(agent[1] || ''), focus,
+        thoughts, thoughtIndex: 0, nextThoughtAt: Infinity, itemLines: [],
         home, basePos: home.clone(),
         moveTarget: null, returnAt: -1, faceTarget: null, nodUntil: -1,
         spawnedAt: -1, active: false, offset: Math.random()
@@ -397,23 +438,40 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   function spawnSpecialist(s, elapsed) {
     if (s.active) return;
     s.spawnedAt = elapsed; s.active = true;
+    s.nextThoughtAt = elapsed + 2 + s.offset * 4;
     s.bot.visible = true; s.label.visible = true;
     s.link.material.opacity = .3;
   }
 
-  function showBubble(entity, text, elapsed) {
-    // One bubble per speaker at a time.
+  function showBubble(entity, text, elapsed, kind = 'speech', duration = EVENT_GAP + 0.8) {
+    // One bubble per robot at a time; speech always wins over a thought.
     for (let b = bubbles.length - 1; b >= 0; b--) {
       if (bubbles[b].entity === entity) {
+        if (kind === 'thought' && bubbles[b].kind === 'speech') return;
         scene.remove(bubbles[b].sprite);
         bubbles[b].sprite.material.map.dispose();
         bubbles[b].sprite.material.dispose();
         bubbles.splice(b, 1);
       }
     }
-    const sprite = makeBubbleSprite(text, entity.accent);
+    const sprite = makeBubbleSprite(text, entity.accent, kind);
     scene.add(sprite);
-    bubbles.push({ sprite, entity, start: elapsed, until: elapsed + EVENT_GAP + 0.8 });
+    bubbles.push({ sprite, entity, start: elapsed, until: elapsed + duration, kind });
+  }
+
+  // Tap (or point-and-select in VR) any robot to inspect what it is doing.
+  function inspectSpecialist(s) {
+    const elapsed = timer.getElapsed();
+    camera.getWorldPosition(tmp);
+    s.faceTarget = new THREE.Vector3(tmp.x, 0, tmp.z);
+    s.returnAt = elapsed + 2.6;
+    s.nodUntil = elapsed + 1.2;
+    const spent = s.itemLines.reduce((sum, item) => sum + (Number(item[2]) || 0), 0);
+    const statLine = s.itemLines.length
+      ? ` · ${s.itemLines.length} line${s.itemLines.length === 1 ? '' : 's'} sourced · £${spent.toLocaleString('en-GB')}`
+      : '';
+    showBubble(s, `${s.name}: ${s.focus}${statLine}`, elapsed, 'speech', 3);
+    s.nextThoughtAt = elapsed + 4;
   }
 
   function startTalk(from, to, elapsed) {
@@ -526,6 +584,24 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       s.pulse.material.opacity = finished ? 0 : Math.sin(t * Math.PI) * 0.9;
     }
 
+    // Between spoken events, working agents surface their genuine reasoning
+    // steps as thought bubbles (Qwen-authored in live mode).
+    if (timelineStart >= 0 && !finished) {
+      for (const s of specialists) {
+        if (!s.active || elapsed < s.nextThoughtAt) continue;
+        s.nextThoughtAt = elapsed + 5.5 + s.offset * 4;
+        if (!bubbles.some(bubble => bubble.entity === s)) {
+          showBubble(s, s.thoughts[s.thoughtIndex++ % s.thoughts.length], elapsed, 'thought', 3.4);
+        }
+      }
+      if (elapsed >= coordEntity.nextThoughtAt) {
+        coordEntity.nextThoughtAt = elapsed + 7;
+        if (!bubbles.some(bubble => bubble.entity === coordEntity)) {
+          showBubble(coordEntity, coordEntity.thoughts[coordEntity.thoughtIndex++ % coordEntity.thoughts.length], elapsed, 'thought', 3.4);
+        }
+      }
+    }
+
     // Speech bubbles hover above whoever is talking, then fade out.
     for (let b = bubbles.length - 1; b >= 0; b--) {
       const bubble = bubbles[b];
@@ -589,6 +665,12 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     begin(scenario, timeline, newBrief) {
       if (timelineStart >= 0) return;
       specialists = buildSpecialists(scenario.agents);
+      // Attribute sourced lines to their agent so tap-to-inspect shows real spend.
+      for (const s of specialists) {
+        s.itemLines = (scenario.items || []).filter(item =>
+          String(item[7] || '').toLowerCase() === s.name.toLowerCase());
+      }
+      coordEntity.nextThoughtAt = timer.getElapsed() + 5;
       events = timeline;
       if (newBrief) briefLine = `${newBrief.type.toUpperCase()} · ${money(newBrief.budget)}`;
       statusText = '';
