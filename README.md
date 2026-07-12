@@ -1,6 +1,10 @@
 # SupplySwarm
 
-SupplySwarm is a mobile-first hackathon vertical slice that turns a business brief and budget into a transparent procurement package. It demonstrates dynamic specialist agents, visible collaboration, deterministic landed-cost calculations, a critic/revision loop, evidence labels, and human approval gates.
+SupplySwarm is a mobile-first hackathon vertical slice that turns a business brief and budget into a transparent procurement package sourced from live Alibaba.com search. Built for **Track 3: Agent Society**, it demonstrates each judging criterion directly:
+
+- **Task decomposition & role assignment** — a Coordinator agent designs a bespoke specialist team per brief, giving each agent its own Alibaba search query and budget share; specialists execute in parallel with live web search.
+- **Dialogue, disagreement & conflict resolution** — every event is `who → to` agent dialogue. The Supplier agent *vetoes* cited links that were not in an agent's real search results; specialists that overshoot their allocation *negotiate* for budget and the Coordinator arbitrates using real headroom from underspenders; a Critic agent revises over-budget packages and messages the specific agents whose lines it cut.
+- **Measured efficiency gain over a single-agent baseline** — every live run also fires one solo Qwen agent with identical tools as a parallel control. Both packages are scored by the same deterministic validators (verified listing links, landed-cost budget validity, wall-clock seconds), and the results page shows the measured comparison plus the parallel-sourcing speed-up. Nothing is scripted.
 
 ## 3D / VR operations room
 

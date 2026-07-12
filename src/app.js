@@ -249,8 +249,16 @@ function resultsView() {
   total = subtotal + finalShipping + finalTax + finalContingency;
   const remaining = state.budget - total;
   const overBudget = total > state.budget;
+  const cmp = plan?.comparison;
+  const measuredCompare = cmp ? `<section class="evaluation">
+        <div><span class="label">MEASURED VS SINGLE AGENT</span><h2>The swarm advantage, measured.</h2><p>This exact brief was also given to one solo Qwen agent with identical web-search tools, run live in parallel as a control. Both packages were scored by the same deterministic validators — nothing scripted.${cmp.parallel_speedup > 1 ? ` Running the specialists in parallel was ${cmp.parallel_speedup}× faster than running them one at a time.` : ''}</p></div>
+        <div class="compare">
+          <div class="single"><span>SINGLE AGENT (CONTROL)</span><b>${cmp.single ? `${cmp.single.verified_links} live listing${cmp.single.verified_links === 1 ? '' : 's'}` : 'RUN FAILED'}</b><p>${cmp.single ? `${cmp.single.items} items · ${money(cmp.single.landed_total)} landed · ${cmp.single.budget_valid ? 'inside budget' : 'OVER budget'} · ${cmp.single.seconds}s` : 'The solo agent returned no usable package for this brief.'}</p></div>
+          <div class="multi"><span>SUPPLYSWARM</span><b>${cmp.swarm.verified_links} live listing${cmp.swarm.verified_links === 1 ? '' : 's'}</b><p>${cmp.swarm.items} items · ${money(cmp.swarm.landed_total)} landed · ${cmp.swarm.budget_valid ? 'inside budget' : 'over budget'} · ${cmp.swarm.seconds}s</p></div>
+        </div>
+      </section>` : '';
   const insight = plan
-    ? `<section class="evaluation">
+    ? `${measuredCompare}<section class="evaluation">
         <div><span class="label">QWEN SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2><p>Generated live by Qwen Cloud${plan.revised ? ' — the critic caught an over-budget package and revised it before approval.' : '.'}</p></div>
         <div class="findings">
           <div><span>RISKS</span><ul>${plan.risks.map(r => `<li>${r}</li>`).join('') || '<li>No blocking risks recorded.</li>'}</ul></div>

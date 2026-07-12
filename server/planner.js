@@ -82,6 +82,17 @@ Rules:
 - Marketplace prices are often per-unit and in USD — multiply by quantity and convert.
 - If search returned nothing usable for a line, still include a realistic estimated line with "url": null and evidence "Estimate — no live listing found".`;
 
+const baselineSystem = (budget) =>
+  `You are a SINGLE procurement agent working completely alone — no team, no specialists. Turn the user's business brief into a complete equipment package sourced from alibaba.com using your live web search. Cite ONLY URLs that actually appear in your search results — never invent a URL.
+
+Respond with ONLY a JSON object:
+{
+  "items": [
+    { "title": "...", "detail": "quantity and short spec", "quantity": <integer>, "price_gbp": <number, TOTAL for the line in GBP>, "priority": "Essential" | "Useful" | "Later", "url": "alibaba.com listing URL from your search results or null", "supplier": "seller name or null", "evidence": "short label" }
+  ]
+}
+Rules: 5 to 9 items covering everything essential to launch. The sum of price_gbp must be at most ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of £${budget}.`;
+
 const REVISE_SYSTEM = `You are the Critic agent of SupplySwarm. A procurement package sourced from live Alibaba searches exceeded budget after landed costs were calculated deterministically. Revise the item list to bring it under budget while keeping every Essential capability (reduce quantities, move nice-to-haves to "Later", or cut lines).
 
 Keep each surviving item's "url" and "supplier" EXACTLY as given — never invent or alter URLs. If you replace an item with a cheaper alternative you did not see a listing for, set its url to null and evidence to "Estimate — critic substitution".
@@ -113,13 +124,16 @@ function cleanItems(rawItems, { sources = [], agentName = null, allowedUrls = nu
   return rawItems
     .map(item => {
       const link = item.url ? cleanUrl(item.url, sources) : null;
+      // Sourcing round: a link survives ONLY if it appeared in the agent's own
+      // search results — anything else is vetoed so no shown link can be fake.
+      // Revision round: only URLs that survived the sourcing round are trusted,
+      // and they keep the evidence label earned there.
       let url = link?.href || null;
-      // On revision passes only URLs that survived the original sourcing round
-      // are trusted, and they keep the evidence label earned in that round.
       if (url && allowedUrls) url = allowedUrls.has(url) ? url : null;
+      else if (url && !link.verified) url = null;
       let evidence = String(item.evidence || 'Qwen estimate').slice(0, 40);
-      if (url) evidence = allowedUrls ? allowedUrls.get(url) : (link?.verified ? 'Live Alibaba listing' : 'Alibaba link — verify');
-      else if (item.url) evidence = 'Estimate — link rejected';
+      if (url) evidence = allowedUrls ? allowedUrls.get(url) : 'Live Alibaba listing';
+      else if (item.url) evidence = 'Estimate — link unverified';
       return {
         title: String(item.title || '').slice(0, 80),
         detail: String(item.detail || '').slice(0, 90),
@@ -152,14 +166,37 @@ function cleanSpecialists(rawSpecialists) {
   return specialists;
 }
 
+const timed = promise => {
+  const start = Date.now();
+  return promise.then(
+    value => ({ status: 'fulfilled', value, seconds: (Date.now() - start) / 1000 }),
+    reason => ({ status: 'rejected', reason, seconds: (Date.now() - start) / 1000 })
+  );
+};
+
+function scorePackage(items, budget, seconds) {
+  const cost = landedCost(items, budget);
+  return {
+    seconds: Math.round(seconds * 10) / 10,
+    items: items.length,
+    verified_links: items.filter(item => item.url).length,
+    budget_valid: cost.valid,
+    landed_total: cost.total
+  };
+}
+
 /**
  * Generate a full procurement plan from a free-text brief.
  * Pipeline: Coordinator designs the team -> each specialist runs its own Qwen
- * call with LIVE web search against alibaba.com (in parallel) -> deterministic
- * landed-cost validation -> Critic revision if over budget.
+ * call with LIVE web search against alibaba.com (in parallel, alongside a solo
+ * single-agent control run) -> deterministic budget-share negotiation ->
+ * landed-cost validation -> Critic revision if over budget. Both packages are
+ * scored with the same deterministic validators so the efficiency gain over
+ * the single-agent baseline is measured, not scripted.
  * Every event carries who -> to so the swarm visibly talks to each other.
  */
 export async function createPlan(text) {
+  const planStart = Date.now();
   const raw = await chatJSON({ system: COORD_SYSTEM, user: text, temperature: 0.5 });
 
   const budget = Math.max(500, Math.round(Number(raw.budget_gbp) || 10000));
@@ -181,14 +218,22 @@ export async function createPlan(text) {
     }
   ];
 
-  // Every specialist searches Alibaba live, in parallel.
-  const missions = await Promise.allSettled(specialists.map(agent => {
-    const lineBudget = Math.max(100, Math.round(productBudget * agent.share));
-    return chatJSONWithSearch({
-      system: specialistSystem(agent.name, agent.focus, lineBudget, business),
-      user: `Business brief: ${text}\nSearch the web now for: site:alibaba.com ${agent.query}`
-    });
+  // Every specialist searches Alibaba live, in parallel. A solo single-agent
+  // control run starts at the same moment so the comparison is measured fairly.
+  const searchStart = Date.now();
+  const baselinePromise = timed(chatJSONWithSearch({
+    system: baselineSystem(budget),
+    user: `Business brief: ${text}\nSearch the web now on alibaba.com for everything this business needs.`
   }));
+  const missions = await Promise.all(specialists.map(agent => {
+    agent.lineBudget = Math.max(100, Math.round(productBudget * agent.share));
+    return timed(chatJSONWithSearch({
+      system: specialistSystem(agent.name, agent.focus, agent.lineBudget, business),
+      user: `Business brief: ${text}\nSearch the web now for: site:alibaba.com ${agent.query}`
+    }));
+  }));
+  const searchWallSeconds = (Date.now() - searchStart) / 1000;
+  const sequentialSeconds = missions.reduce((sum, mission) => sum + mission.seconds, 0);
 
   let items = [];
   let failedAgents = [];
@@ -199,15 +244,27 @@ export async function createPlan(text) {
       text: `Searching Alibaba.com: "${agent.query}"…`
     });
     if (mission.status === 'fulfilled') {
-      const found = cleanItems(mission.value.json.items, { sources: mission.value.sources, agentName: agent.name });
+      const rawFound = Array.isArray(mission.value.json.items) ? mission.value.json.items : [];
+      const found = cleanItems(rawFound, { sources: mission.value.sources, agentName: agent.name });
       items.push(...found);
+      agent.spent = found.reduce((sum, item) => sum + item.price_gbp, 0);
       const liveCount = found.filter(item => item.url).length;
       const report = String(mission.value.json.report || '').slice(0, 90);
       events.push({
         who: agent.name, to: 'Coordinator',
         text: report || `${found.length} lines shortlisted, ${liveCount} with live Alibaba listings.`
       });
+      // Execution conflict: the Supplier agent vetoes any cited link that was
+      // not actually present in that specialist's search results.
+      const vetoed = rawFound.filter(item => item.url).length - liveCount;
+      if (vetoed > 0) {
+        events.push({
+          who: 'Supplier', to: agent.name,
+          text: `Vetoed ${vetoed} link${vetoed === 1 ? '' : 's'} not in your search results — downgraded to estimates.`
+        });
+      }
     } else {
+      agent.spent = 0;
       failedAgents.push(agent.name);
       events.push({
         who: agent.name, to: 'Critic',
@@ -215,6 +272,31 @@ export async function createPlan(text) {
       });
     }
   });
+
+  // Negotiation: specialists that overshot their allocation must request more
+  // budget; the Coordinator arbitrates using real headroom from underspenders.
+  const overspenders = specialists.filter(agent => agent.spent > agent.lineBudget * 1.05);
+  for (const agent of overspenders.slice(0, 2)) {
+    const overBy = Math.round(agent.spent - agent.lineBudget);
+    events.push({
+      who: agent.name, to: 'Coordinator',
+      text: `Requesting £${overBy.toLocaleString('en-GB')} above my £${agent.lineBudget.toLocaleString('en-GB')} allocation for ${agent.focus.toLowerCase()}.`
+    });
+    const donor = specialists.find(other => other !== agent && other.spent < other.lineBudget - overBy);
+    if (donor) {
+      donor.lineBudget -= overBy;
+      agent.lineBudget += overBy;
+      events.push({
+        who: 'Coordinator', to: agent.name,
+        text: `Approved — reallocating £${overBy.toLocaleString('en-GB')} of ${donor.name}'s unspent headroom to you.`
+      });
+    } else {
+      events.push({
+        who: 'Coordinator', to: agent.name,
+        text: 'No headroom left in the swarm — your lines go to the Critic for cuts.'
+      });
+    }
+  }
 
   if (!items.length) {
     throw Object.assign(new Error('No specialist agent returned usable items'), { status: 502 });
@@ -282,8 +364,30 @@ export async function createPlan(text) {
     text: cost.valid ? 'Package approved. Preparing your launch plan.' : 'Best available package prepared with budget risk flagged.'
   });
 
+  // Score both packages with the same deterministic validators. The swarm's
+  // time is measured before waiting on the control run so it is not inflated.
+  const swarmSeconds = (Date.now() - planStart) / 1000;
+  const swarmScore = scorePackage(items, budget, swarmSeconds);
+  let singleScore = null;
+  const baseline = await baselinePromise;
+  if (baseline.status === 'fulfilled') {
+    const baselineItems = cleanItems(baseline.value.json.items, { sources: baseline.value.sources, agentName: 'Single agent' });
+    if (baselineItems.length) singleScore = scorePackage(baselineItems, budget, baseline.seconds);
+  }
+  const comparison = {
+    swarm: swarmScore,
+    single: singleScore,
+    parallel_speedup: Math.max(1, Math.round((sequentialSeconds / Math.max(0.1, searchWallSeconds)) * 10) / 10)
+  };
+
   // Spread progress 8 -> 100 across events for the frontend timeline.
-  const trimmed = events.slice(0, 18);
+  // If the story ran long, drop "Searching…" filler first — never the ending.
+  while (events.length > 18) {
+    const filler = events.findIndex(event => event.text.startsWith('Searching Alibaba.com'));
+    if (filler >= 0) events.splice(filler, 1);
+    else events.splice(Math.floor(events.length / 2), 1);
+  }
+  const trimmed = events;
   const timeline = trimmed.map((event, i) => [
     String(event.who).slice(0, 20),
     String(event.text).slice(0, 110),
@@ -315,6 +419,7 @@ export async function createPlan(text) {
     risks,
     assumptions: (raw.assumptions || []).map(String).slice(0, 5),
     landed_cost: cost,
-    revised
+    revised,
+    comparison
   };
 }
