@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const INK = 0x07110e, LIME = 0xb8f632, MINT = 0x55e6b1, ORANGE = 0xff6b35;
 const SHELL = 0x8c9b91, FACE = 0xdce7dd, TRIM = 0x33423c;
-const ACCENTS = [LIME, MINT, LIME, MINT, ORANGE, MINT];
+const ACCENTS = [LIME, MINT, LIME, MINT, ORANGE, MINT, LIME];
 
 function makeLabelSprite(code, name, accent) {
   const canvas = document.createElement('canvas');
@@ -66,12 +66,13 @@ function buildBot(accent, scale = 1) {
   return bot;
 }
 
-export function launchOpsRoom({ container, scenario, brief, events, phaseNames, money, onComplete, onExit }) {
+export function launchOpsRoom({ container, brief, phaseNames, money, onComplete, onExit }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.xr.enabled = true;
   container.appendChild(renderer.domElement);
+  renderer.domElement.style.touchAction = 'none';
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(INK);
@@ -101,41 +102,19 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.01; scene.add(ring);
   }
 
-  // Coordinator
+  // Coordinator — the robot you hold and talk to
   const coordinator = buildBot(LIME, 1.15);
   scene.add(coordinator);
   const hubLabel = makeLabelSprite('HUB', 'Coordinator', LIME);
   hubLabel.position.set(0, 2.45, 0); scene.add(hubLabel);
   const hubAnchor = new THREE.Vector3(0, 1.15, 0);
 
-  // Specialists (spawn later)
-  const specialists = scenario.agents.map((agent, i) => {
-    const angle = -Math.PI / 2 + (i + 0.5) * (Math.PI * 2 / scenario.agents.length);
-    const accent = ACCENTS[i % ACCENTS.length];
-    const bot = buildBot(accent, 0.8);
-    bot.position.set(Math.cos(angle) * 2.9, 0, Math.sin(angle) * 2.9);
-    bot.lookAt(0, 0, 0);
-    bot.visible = false;
-    scene.add(bot);
-    const label = makeLabelSprite(agent[0], agent[1], accent);
-    label.position.copy(bot.position).setY(1.95);
-    label.visible = false;
-    scene.add(label);
-    const link = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([hubAnchor, bot.position.clone().setY(0.95)]),
-      new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0 })
-    );
-    scene.add(link);
-    const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0 }));
-    scene.add(pulse);
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.34, 0.34, 4, 20, 1, true),
-      new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
-    );
-    beam.position.copy(bot.position).setY(2);
-    scene.add(beam);
-    return { bot, label, link, pulse, beam, accent, spawnedAt: -1, active: false, offset: Math.random() };
-  });
+  // Listening halo shown while the mic is open
+  const halo = new THREE.Mesh(
+    new THREE.RingGeometry(0.62, 0.7, 48),
+    new THREE.MeshBasicMaterial({ color: MINT, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })
+  );
+  halo.rotation.x = -Math.PI / 2; halo.position.y = 0.05; scene.add(halo);
 
   // Status board
   const boardCanvas = document.createElement('canvas');
@@ -151,8 +130,17 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
   board.rotation.x = 0.06;
   scene.add(board);
 
+  // Run state — nothing plays until begin() is called
+  let specialists = [];
+  let events = [];
+  let timelineStart = -1;
+  let eventIndex = 0;
+  let finished = false;
+  let listening = false;
+  let statusText = 'HOLD ME AND SPEAK — OR TYPE YOUR BRIEF BELOW';
+  let briefLine = brief ? `${brief.type.toUpperCase()} · ${money(brief.budget)}` : 'AWAITING YOUR BRIEF';
   const rows = [];
-  let phaseLabel = phaseNames[0], progress = 8, finished = false;
+  let phaseLabel = 'AWAITING YOUR BRIEF', progress = 0;
 
   function drawBoard() {
     const ctx = boardCtx;
@@ -161,25 +149,41 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
     ctx.strokeStyle = 'rgba(184,246,50,.5)'; ctx.lineWidth = 3; ctx.strokeRect(6, 6, 1012, 564);
     ctx.textAlign = 'left';
     ctx.fillStyle = '#b8f632'; ctx.font = '700 30px sans-serif';
-    ctx.fillText('SWARM OPERATIONS · LIVE', 40, 62);
+    ctx.fillText(timelineStart >= 0 ? 'SWARM OPERATIONS · LIVE' : 'SUPPLYSWARM OPS ROOM', 40, 62);
     ctx.fillStyle = '#8d9992'; ctx.font = '600 24px sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(`${brief.type.toUpperCase()} · ${money(brief.budget)}`, 984, 62);
+    ctx.fillText(briefLine, 984, 62);
     ctx.textAlign = 'left';
     ctx.strokeStyle = 'rgba(238,240,232,.16)'; ctx.beginPath(); ctx.moveTo(40, 86); ctx.lineTo(984, 86); ctx.stroke();
-    let y = 136;
-    for (const row of rows.slice(-6)) {
-      ctx.fillStyle = row.warning ? '#ff966e' : '#55e6b1';
-      ctx.font = '700 26px sans-serif';
-      ctx.fillText(row.who.toUpperCase(), 40, y);
-      ctx.fillStyle = '#c8d2ca'; ctx.font = '400 25px sans-serif';
-      ctx.fillText(row.text.length > 62 ? row.text.slice(0, 61) + '…' : row.text, 240, y);
-      y += 56;
+    if (timelineStart < 0) {
+      // Idle: invite the user to talk to the coordinator
+      ctx.textAlign = 'center';
+      ctx.fillStyle = listening ? '#55e6b1' : '#eef0e8';
+      ctx.font = '700 52px sans-serif';
+      ctx.fillText(listening ? '● LISTENING…' : 'TALK TO ME', 512, 268);
+      ctx.fillStyle = '#8d9992'; ctx.font = '500 27px sans-serif';
+      const lines = statusText.length > 52
+        ? [statusText.slice(0, statusText.lastIndexOf(' ', 52)), statusText.slice(statusText.lastIndexOf(' ', 52) + 1)]
+        : [statusText];
+      lines.forEach((line, i) => ctx.fillText(line, 512, 330 + i * 38));
+      ctx.fillStyle = '#5f6c64'; ctx.font = '600 20px sans-serif';
+      ctx.fillText('TELL ME YOUR BUSINESS, BUDGET AND LOCATION', 512, 500);
+      ctx.textAlign = 'left';
+    } else {
+      let y = 136;
+      for (const row of rows.slice(-6)) {
+        ctx.fillStyle = row.warning ? '#ff966e' : '#55e6b1';
+        ctx.font = '700 26px sans-serif';
+        ctx.fillText(row.who.toUpperCase(), 40, y);
+        ctx.fillStyle = '#c8d2ca'; ctx.font = '400 25px sans-serif';
+        ctx.fillText(row.text.length > 62 ? row.text.slice(0, 61) + '…' : row.text, 240, y);
+        y += 56;
+      }
+      ctx.fillStyle = finished ? '#b8f632' : '#eef0e8'; ctx.font = '700 30px sans-serif';
+      ctx.fillText(finished ? 'PACKAGE APPROVED — YOUR LAUNCH PLAN IS READY' : phaseLabel, 40, 514);
+      ctx.fillStyle = 'rgba(184,246,50,.18)'; ctx.fillRect(40, 532, 944, 12);
+      ctx.fillStyle = '#b8f632'; ctx.fillRect(40, 532, 944 * progress / 100, 12);
     }
-    ctx.fillStyle = finished ? '#b8f632' : '#eef0e8'; ctx.font = '700 30px sans-serif';
-    ctx.fillText(finished ? 'PACKAGE APPROVED — YOUR LAUNCH PLAN IS READY' : phaseLabel, 40, 514);
-    ctx.fillStyle = 'rgba(184,246,50,.18)'; ctx.fillRect(40, 532, 944, 12);
-    ctx.fillStyle = '#b8f632'; ctx.fillRect(40, 532, 944 * progress / 100, 12);
     boardTexture.needsUpdate = true;
   }
   drawBoard();
@@ -192,8 +196,67 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
   controls.maxPolarAngle = Math.PI / 2 - 0.04;
   controls.update();
 
-  // WebXR session handling
+  const callbacks = { onFinished: onComplete, onEvent: null, onXRChange: null, onXRError: null, onHoldStart: null, onHoldEnd: null };
+
+  // Hold-to-talk: press and hold the coordinator robot
+  const raycaster = new THREE.Raycaster();
+  const pointerVec = new THREE.Vector2();
+  let holding = false;
+  function onPointerDown(e) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointerVec.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    raycaster.setFromCamera(pointerVec, camera);
+    if (raycaster.intersectObject(coordinator, true).length) {
+      holding = true;
+      controls.enabled = false;
+      callbacks.onHoldStart?.();
+      e.preventDefault();
+    }
+  }
+  function onPointerUp() {
+    if (!holding) return;
+    holding = false;
+    if (!renderer.xr.isPresenting) controls.enabled = true;
+    callbacks.onHoldEnd?.();
+  }
+  renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
+
+  // WebXR session handling — in VR, point at the coordinator and hold trigger.
   let xrSession = null;
+  const controllerRotation = new THREE.Matrix4();
+  function controllerHitsCoordinator(controller) {
+    controllerRotation.identity().extractRotation(controller.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(controllerRotation);
+    return raycaster.intersectObject(coordinator, true).length > 0;
+  }
+  const onSelectStart = event => {
+    const controller = event.target;
+    if (!controllerHitsCoordinator(controller)) return;
+    controller.userData.holdingCoordinator = true;
+    callbacks.onHoldStart?.();
+  };
+  const onSelectEnd = event => {
+    const controller = event.target;
+    if (!controller.userData.holdingCoordinator) return;
+    controller.userData.holdingCoordinator = false;
+    callbacks.onHoldEnd?.();
+  };
+  const controllers = [0, 1].map(index => {
+    const controller = renderer.xr.getController(index);
+    const ray = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+      new THREE.LineBasicMaterial({ color: MINT, transparent: true, opacity: 0.5 })
+    );
+    ray.scale.z = 6;
+    controller.add(ray);
+    controller.addEventListener('selectstart', onSelectStart);
+    controller.addEventListener('selectend', onSelectEnd);
+    rig.add(controller);
+    return controller;
+  });
   async function enterVR() {
     if (xrSession) return;
     try {
@@ -202,6 +265,12 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
       });
       xrSession = session;
       session.addEventListener('end', () => {
+        for (const controller of controllers) {
+          if (controller.userData.holdingCoordinator) {
+            controller.userData.holdingCoordinator = false;
+            callbacks.onHoldEnd?.();
+          }
+        }
         xrSession = null;
         rig.position.set(0, 0, 0);
         camera.position.set(0, 3.1, 7.6);
@@ -220,6 +289,10 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
       await renderer.xr.setSession(session);
       controls.enabled = false;
       rig.position.set(0, 0, 4.4);
+      if (timelineStart < 0) {
+        statusText = 'HOLD YOUR CONTROLLER TRIGGER AND SPEAK';
+        drawBoard();
+      }
       callbacks.onXRChange?.(true);
     } catch (err) {
       console.warn('VR session failed', err);
@@ -227,17 +300,46 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
     }
   }
 
-  // Event timeline
-  const EVENT_GAP = 1.45, START_DELAY = 1.3;
-  let eventIndex = 0;
-  const clock = new THREE.Clock();
+  const timer = new THREE.Timer();
+  timer.connect(document);
   const tmp = new THREE.Vector3();
+  const EVENT_GAP = 1.45;
+
+  function buildSpecialists(agents) {
+    return agents.map((agent, i) => {
+      const angle = -Math.PI / 2 + (i + 0.5) * (Math.PI * 2 / agents.length);
+      const accent = ACCENTS[i % ACCENTS.length];
+      const bot = buildBot(accent, 0.8);
+      bot.position.set(Math.cos(angle) * 2.9, 0, Math.sin(angle) * 2.9);
+      bot.lookAt(0, 0, 0);
+      bot.visible = false;
+      scene.add(bot);
+      const label = makeLabelSprite(agent[0], agent[1], accent);
+      label.position.copy(bot.position).setY(1.95);
+      label.visible = false;
+      scene.add(label);
+      const link = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([hubAnchor, bot.position.clone().setY(0.95)]),
+        new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0 })
+      );
+      scene.add(link);
+      const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0 }));
+      scene.add(pulse);
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.34, 0.34, 4, 20, 1, true),
+        new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
+      );
+      beam.position.copy(bot.position).setY(2);
+      scene.add(beam);
+      return { bot, label, link, pulse, beam, accent, spawnedAt: -1, active: false, offset: Math.random() };
+    });
+  }
 
   function fireEvent(i, elapsed) {
     const [who, text, pct] = events[i];
     rows.push({ who, text, warning: /critic/i.test(who) });
     progress = pct;
-    phaseLabel = phaseNames[Math.min(i, phaseNames.length - 1)];
+    phaseLabel = phaseNames[Math.min(phaseNames.length - 1, Math.floor(i / Math.max(1, events.length - 1) * (phaseNames.length - 1)))];
     if (i < specialists.length) {
       const s = specialists[i];
       s.spawnedAt = elapsed; s.active = true;
@@ -246,27 +348,32 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
     }
     if (i === events.length - 1) {
       finished = true;
-      setTimeout(() => {
-        if (xrSession) { /* board shows completion; results shown after headset exit */ }
-        else callbacks.onFinished?.();
-      }, 1500);
+      setTimeout(() => { if (!xrSession) callbacks.onFinished?.(); }, 1500);
     }
     drawBoard();
     callbacks.onEvent?.({ who, text, progress: pct, phase: phaseLabel, index: i });
   }
 
-  renderer.setAnimationLoop(() => {
-    const dt = clock.getDelta();
-    const elapsed = clock.elapsedTime;
+  renderer.setAnimationLoop(timestamp => {
+    timer.update(timestamp);
+    const dt = timer.getDelta();
+    const elapsed = timer.getElapsed();
 
-    if (eventIndex < events.length && elapsed > START_DELAY + eventIndex * EVENT_GAP) {
+    if (timelineStart >= 0 && eventIndex < events.length && elapsed > timelineStart + eventIndex * EVENT_GAP) {
       fireEvent(eventIndex, elapsed);
       eventIndex++;
     }
 
     coordinator.position.y = Math.sin(elapsed * 1.6) * 0.05;
     coordinator.rotation.y = Math.sin(elapsed * 0.5) * 0.25;
-    hubLight.intensity = 7 + Math.sin(elapsed * 3) * 2;
+    hubLight.intensity = listening ? 13 + Math.sin(elapsed * 9) * 4 : 7 + Math.sin(elapsed * 3) * 2;
+    if (listening) {
+      halo.material.opacity = 0.5 + Math.sin(elapsed * 7) * 0.3;
+      const pulseScale = 1 + Math.sin(elapsed * 7) * 0.12;
+      halo.scale.setScalar(pulseScale);
+    } else if (halo.material.opacity > 0) {
+      halo.material.opacity = Math.max(0, halo.material.opacity - dt * 2);
+    }
 
     for (const s of specialists) {
       if (!s.active) continue;
@@ -294,8 +401,6 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
   }
   window.addEventListener('resize', onResize);
 
-  const callbacks = { onFinished: onComplete, onEvent: null, onXRChange: null, onXRError: null };
-
   return {
     callbacks,
     enterVR,
@@ -303,11 +408,40 @@ export function launchOpsRoom({ container, scenario, brief, events, phaseNames, 
       try { return !!navigator.xr && await navigator.xr.isSessionSupported('immersive-vr'); }
       catch { return false; }
     },
+    isRunning: () => timelineStart >= 0,
     isFinished: () => finished,
+    /** Start the swarm run. Call once, after the user has given their brief. */
+    begin(scenario, timeline, newBrief) {
+      if (timelineStart >= 0) return;
+      specialists = buildSpecialists(scenario.agents);
+      events = timeline;
+      if (newBrief) briefLine = `${newBrief.type.toUpperCase()} · ${money(newBrief.budget)}`;
+      statusText = '';
+      timelineStart = timer.getElapsed() + 0.8;
+      drawBoard();
+    },
+    setStatus(text) {
+      if (timelineStart >= 0) return;
+      statusText = String(text).toUpperCase();
+      drawBoard();
+    },
+    setListening(value) {
+      listening = Boolean(value);
+      if (listening && timelineStart < 0) statusText = 'RELEASE WHEN YOU HAVE FINISHED SPEAKING';
+      drawBoard();
+    },
     dispose() {
       renderer.setAnimationLoop(null);
       if (xrSession) xrSession.end().catch(() => {});
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      for (const controller of controllers) {
+        controller.removeEventListener('selectstart', onSelectStart);
+        controller.removeEventListener('selectend', onSelectEnd);
+      }
+      timer.dispose();
       controls.dispose();
       scene.traverse(obj => {
         obj.geometry?.dispose?.();

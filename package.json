@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build --outDir .site-client && node scripts/prepare-sites.mjs",
+    "dev:server": "node --watch --env-file-if-exists=.env server/index.js",
+    "build": "vite build",
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "build:sites": "vite build --outDir .site-client && node scripts/prepare-sites.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "devDependencies": {
     "vite": "^7.0.0"
   },
   "dependencies": {
+    "express": "^5.2.1",
     "three": "^0.185.1"
   }
 }
