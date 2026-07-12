@@ -25,6 +25,37 @@ function makeLabelSprite(code, name, accent) {
   return sprite;
 }
 
+function makeBubbleSprite(text, accent) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 768; canvas.height = 232;
+  const ctx = canvas.getContext('2d');
+  // Wrap into up to 3 lines
+  const words = String(text).split(' ');
+  const lines = [''];
+  for (const word of words) {
+    const candidate = lines[lines.length - 1] ? `${lines[lines.length - 1]} ${word}` : word;
+    if (candidate.length > 30 && lines[lines.length - 1]) {
+      if (lines.length === 3) { lines[2] = lines[2].slice(0, 28) + '…'; break; }
+      lines.push(word);
+    } else {
+      lines[lines.length - 1] = candidate;
+    }
+  }
+  const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
+  ctx.fillStyle = 'rgba(7,17,14,.92)';
+  ctx.beginPath(); ctx.roundRect(8, 8, 752, 216, 26); ctx.fill();
+  ctx.strokeStyle = accentCss; ctx.globalAlpha = .8; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.roundRect(8, 8, 752, 216, 26); ctx.stroke(); ctx.globalAlpha = 1;
+  ctx.fillStyle = '#dce7dd'; ctx.font = '600 40px sans-serif'; ctx.textAlign = 'center';
+  const startY = 232 / 2 - (lines.length - 1) * 26 + 14;
+  lines.forEach((line, i) => ctx.fillText(line, 384, startY + i * 52));
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+  sprite.scale.set(1.9, 0.57, 1);
+  return sprite;
+}
+
 function buildBot(accent, scale = 1) {
   const bot = new THREE.Group();
   const trim = new THREE.MeshStandardMaterial({ color: TRIM, roughness: .6 });
@@ -173,10 +204,11 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       let y = 136;
       for (const row of rows.slice(-6)) {
         ctx.fillStyle = row.warning ? '#ff966e' : '#55e6b1';
-        ctx.font = '700 26px sans-serif';
-        ctx.fillText(row.who.toUpperCase(), 40, y);
-        ctx.fillStyle = '#c8d2ca'; ctx.font = '400 25px sans-serif';
-        ctx.fillText(row.text.length > 62 ? row.text.slice(0, 61) + '…' : row.text, 240, y);
+        ctx.font = '700 22px sans-serif';
+        const speaker = `${row.who}${row.to ? ` → ${row.to}` : ''}`.toUpperCase();
+        ctx.fillText(speaker.length > 22 ? speaker.slice(0, 21) + '…' : speaker, 40, y);
+        ctx.fillStyle = '#c8d2ca'; ctx.font = '400 24px sans-serif';
+        ctx.fillText(row.text.length > 56 ? row.text.slice(0, 55) + '…' : row.text, 330, y);
         y += 56;
       }
       ctx.fillStyle = finished ? '#b8f632' : '#eef0e8'; ctx.font = '700 30px sans-serif';
@@ -303,14 +335,35 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   const timer = new THREE.Timer();
   timer.connect(document);
   const tmp = new THREE.Vector3();
-  const EVENT_GAP = 1.45;
+  const tmpDest = new THREE.Vector3();
+  const EVENT_GAP = 2.4; // long enough to read each exchange
+
+  // The coordinator counts as a conversation participant too.
+  const coordEntity = { isHub: true, bot: coordinator, accent: LIME };
+  const bubbles = []; // { sprite, entity, start, until }
+  const talks = [];   // { from, to, line, mesh, start } — agent-to-agent pulses
+
+  function entityPosition(entity, out) {
+    if (entity.isHub) return out.set(0, 1.15, 0);
+    return out.copy(entity.bot.position).setY(0.95);
+  }
+
+  function findEntity(name) {
+    const n = String(name || '').toLowerCase().trim();
+    if (!n) return null;
+    const specialist = specialists.find(s => s.name.toLowerCase() === n || s.code.toLowerCase() === n);
+    if (specialist) return specialist;
+    if (n.includes('coordinator') || n === 'swarm' || n === 'hub' || n.includes('cost')) return coordEntity;
+    return null;
+  }
 
   function buildSpecialists(agents) {
     return agents.map((agent, i) => {
       const angle = -Math.PI / 2 + (i + 0.5) * (Math.PI * 2 / agents.length);
       const accent = ACCENTS[i % ACCENTS.length];
       const bot = buildBot(accent, 0.8);
-      bot.position.set(Math.cos(angle) * 2.9, 0, Math.sin(angle) * 2.9);
+      const home = new THREE.Vector3(Math.cos(angle) * 2.9, 0, Math.sin(angle) * 2.9);
+      bot.position.copy(home);
       bot.lookAt(0, 0, 0);
       bot.visible = false;
       scene.add(bot);
@@ -331,27 +384,89 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       );
       beam.position.copy(bot.position).setY(2);
       scene.add(beam);
-      return { bot, label, link, pulse, beam, accent, spawnedAt: -1, active: false, offset: Math.random() };
+      return {
+        bot, label, link, pulse, beam, accent,
+        code: String(agent[0] || ''), name: String(agent[1] || ''),
+        home, basePos: home.clone(),
+        moveTarget: null, returnAt: -1, faceTarget: null, nodUntil: -1,
+        spawnedAt: -1, active: false, offset: Math.random()
+      };
     });
   }
 
+  function spawnSpecialist(s, elapsed) {
+    if (s.active) return;
+    s.spawnedAt = elapsed; s.active = true;
+    s.bot.visible = true; s.label.visible = true;
+    s.link.material.opacity = .3;
+  }
+
+  function showBubble(entity, text, elapsed) {
+    // One bubble per speaker at a time.
+    for (let b = bubbles.length - 1; b >= 0; b--) {
+      if (bubbles[b].entity === entity) {
+        scene.remove(bubbles[b].sprite);
+        bubbles[b].sprite.material.map.dispose();
+        bubbles[b].sprite.material.dispose();
+        bubbles.splice(b, 1);
+      }
+    }
+    const sprite = makeBubbleSprite(text, entity.accent);
+    scene.add(sprite);
+    bubbles.push({ sprite, entity, start: elapsed, until: elapsed + EVENT_GAP + 0.8 });
+  }
+
+  function startTalk(from, to, elapsed) {
+    const a = entityPosition(from, new THREE.Vector3());
+    const b = entityPosition(to, new THREE.Vector3());
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([a, b]),
+      new THREE.LineBasicMaterial({ color: from.accent, transparent: true, opacity: 0.55 })
+    );
+    scene.add(line);
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 10, 8),
+      new THREE.MeshBasicMaterial({ color: from.accent, transparent: true, opacity: 0.95 })
+    );
+    scene.add(mesh);
+    talks.push({ from, to, line, mesh, start: elapsed });
+  }
+
   function fireEvent(i, elapsed) {
-    const [who, text, pct] = events[i];
-    rows.push({ who, text, warning: /critic/i.test(who) });
+    const [who, text, pct, to] = events[i];
+    rows.push({ who, to, text, warning: /critic/i.test(who) });
     progress = pct;
     phaseLabel = phaseNames[Math.min(phaseNames.length - 1, Math.floor(i / Math.max(1, events.length - 1) * (phaseNames.length - 1)))];
-    if (i < specialists.length) {
-      const s = specialists[i];
-      s.spawnedAt = elapsed; s.active = true;
-      s.bot.visible = true; s.label.visible = true;
-      s.link.material.opacity = .3;
+
+    // Guarantee everyone eventually beams in even if they never speak.
+    if (i < specialists.length) spawnSpecialist(specialists[i], elapsed);
+
+    const speaker = findEntity(who);
+    const target = findEntity(to);
+    if (speaker && !speaker.isHub) spawnSpecialist(speaker, elapsed);
+    if (target && !target.isHub) spawnSpecialist(target, elapsed);
+
+    // The speaker walks toward whoever it is addressing, faces them and talks.
+    if (speaker && !speaker.isHub && target && target !== speaker) {
+      const targetPos = entityPosition(target, new THREE.Vector3()).setY(0);
+      speaker.moveTarget = speaker.home.clone().lerp(targetPos, target.isHub ? 0.45 : 0.42);
+      speaker.faceTarget = targetPos.clone();
+      speaker.returnAt = elapsed + EVENT_GAP + 0.6;
+      if (!target.isHub) {
+        target.faceTarget = speaker.home.clone();
+        target.returnAt = elapsed + EVENT_GAP + 0.6;
+        target.nodUntil = elapsed + 1.6;
+      }
     }
+    if (speaker) showBubble(speaker, text, elapsed);
+    if (speaker && target && target !== speaker) startTalk(speaker, target, elapsed);
+
     if (i === events.length - 1) {
       finished = true;
       setTimeout(() => { if (!xrSession) callbacks.onFinished?.(); }, 1500);
     }
     drawBoard();
-    callbacks.onEvent?.({ who, text, progress: pct, phase: phaseLabel, index: i });
+    callbacks.onEvent?.({ who, to, text, progress: pct, phase: phaseLabel, index: i });
   }
 
   renderer.setAnimationLoop(timestamp => {
@@ -380,13 +495,73 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       const since = elapsed - s.spawnedAt;
       const grow = Math.min(1, since / 0.6);
       const ease = 1 - Math.pow(1 - grow, 3);
-      s.bot.scale.setScalar(0.8 * ease);
-      s.bot.position.y = Math.sin(elapsed * 1.8 + s.offset * 6) * 0.045;
+      const nod = elapsed < s.nodUntil ? 1 + Math.max(0, Math.sin((s.nodUntil - elapsed) * 9)) * 0.05 : 1;
+      s.bot.scale.setScalar(0.8 * ease * nod);
+
+      // Walk: toward a conversation partner while speaking, otherwise drift near home.
+      const conversing = s.moveTarget && elapsed < s.returnAt;
+      tmpDest.copy(conversing ? s.moveTarget : s.home);
+      if (!conversing && !finished) {
+        tmpDest.x += Math.sin(elapsed * 0.4 + s.offset * 7) * 0.2;
+        tmpDest.z += Math.cos(elapsed * 0.33 + s.offset * 5) * 0.2;
+      }
+      s.basePos.lerp(tmpDest, 1 - Math.exp(-dt * 2.6));
+      const bob = Math.sin(elapsed * 1.8 + s.offset * 6) * 0.045;
+      s.bot.position.set(s.basePos.x, bob, s.basePos.z);
+
+      // Face the agent being spoken to, otherwise the coordinator.
+      const facing = s.faceTarget && elapsed < s.returnAt + 0.8 ? s.faceTarget : hubAnchor;
+      s.bot.lookAt(facing.x, s.bot.position.y, facing.z);
+
+      // Label and hub link follow the walking bot.
+      s.label.position.set(s.basePos.x, 1.95 + bob, s.basePos.z);
+      const linkPositions = s.link.geometry.attributes.position;
+      linkPositions.setXYZ(1, s.bot.position.x, 0.95, s.bot.position.z);
+      linkPositions.needsUpdate = true;
+
       s.beam.material.opacity = Math.max(0, 0.35 * (1 - since / 0.8));
       const t = (elapsed * 0.45 + s.offset) % 1;
       tmp.copy(hubAnchor).lerp(s.bot.position.clone().setY(0.95), t);
       s.pulse.position.copy(tmp);
       s.pulse.material.opacity = finished ? 0 : Math.sin(t * Math.PI) * 0.9;
+    }
+
+    // Speech bubbles hover above whoever is talking, then fade out.
+    for (let b = bubbles.length - 1; b >= 0; b--) {
+      const bubble = bubbles[b];
+      const holder = bubble.entity;
+      if (holder.isHub) bubble.sprite.position.set(0, 2.9, 0);
+      else bubble.sprite.position.set(holder.basePos.x, 2.45, holder.basePos.z);
+      const life = bubble.until - elapsed;
+      const fadeIn = Math.min(1, (elapsed - bubble.start) / 0.25);
+      bubble.sprite.material.opacity = life < 0.5 ? Math.max(0, life / 0.5) : fadeIn;
+      if (life <= 0) {
+        scene.remove(bubble.sprite);
+        bubble.sprite.material.map.dispose();
+        bubble.sprite.material.dispose();
+        bubbles.splice(b, 1);
+      }
+    }
+
+    // Agent-to-agent message pulses travel between the two talking robots.
+    for (let k = talks.length - 1; k >= 0; k--) {
+      const talk = talks[k];
+      const t = (elapsed - talk.start) / 1.1;
+      const a = entityPosition(talk.from, new THREE.Vector3());
+      const b = entityPosition(talk.to, tmp);
+      const linePositions = talk.line.geometry.attributes.position;
+      linePositions.setXYZ(0, a.x, a.y, a.z);
+      linePositions.setXYZ(1, b.x, b.y, b.z);
+      linePositions.needsUpdate = true;
+      talk.line.material.opacity = Math.max(0, 0.55 * (1 - t * 0.6));
+      talk.mesh.position.copy(a).lerp(b, Math.min(1, t));
+      talk.mesh.material.opacity = t >= 1 ? Math.max(0, 0.95 * (1 - (t - 1) * 4)) : 0.95;
+      if (t > 1.4) {
+        scene.remove(talk.line); scene.remove(talk.mesh);
+        talk.line.geometry.dispose(); talk.line.material.dispose();
+        talk.mesh.geometry.dispose(); talk.mesh.material.dispose();
+        talks.splice(k, 1);
+      }
     }
 
     if (!renderer.xr.isPresenting) controls.update();
