@@ -478,7 +478,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   // The coordinator counts as a conversation participant too.
   const coordEntity = {
     isHub: true, bot: coordinator, accent: LIME,
-    thoughts: ['Tracking spend across the whole swarm…', 'Merging shortlists into one package…', 'Waiting on specialist reports from AliExpress…'],
+    thoughts: ['Tracking spend across the whole swarm…', 'Merging shortlists into one package…', 'Waiting on specialist reports from Alibaba…'],
     thoughtIndex: 0, nextThoughtAt: Infinity
   };
   const bubbles = []; // { sprite, entity, start, until, kind }
@@ -527,7 +527,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       world.add(beam);
       const focus = String(agent[2] || 'my category');
       const thoughts = Array.isArray(agent[3]) && agent[3].length ? agent[3] : [
-        `Scanning AliExpress for ${focus.toLowerCase()}…`,
+        `Scanning Alibaba for ${focus.toLowerCase()}…`,
         'Comparing unit prices and MOQ terms…',
         'Attaching evidence to my shortlist…'
       ];

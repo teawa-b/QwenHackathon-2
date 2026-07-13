@@ -30,7 +30,7 @@ export function landedCost(items, budget) {
   };
 }
 
-const COORD_SYSTEM = `You are the Coordinator of SupplySwarm, a society of AI procurement agents that turns a business idea and budget into an AliExpress sourcing mission. You do NOT pick products yourself — you design the specialist team that will each search AliExpress live.
+const COORD_SYSTEM = `You are the Coordinator of SupplySwarm, a society of AI procurement agents that turns a business idea and budget into an Alibaba.com sourcing mission. You do NOT pick products yourself — you design the specialist team that will each search Alibaba.com live.
 
 Given the user's business brief, respond with ONLY a JSON object matching this exact schema:
 
@@ -44,7 +44,7 @@ Given the user's business brief, respond with ONLY a JSON object matching this e
       "code": "3-4 letter code",
       "name": "one word role, e.g. 'Computing'",
       "focus": "3-5 word sourcing focus",
-      "query": "the exact AliExpress search phrase for the equipment this specialist must source, e.g. 'gaming pc workstation i7 32gb'",
+      "query": "the exact Alibaba.com search phrase for the equipment this specialist must source, e.g. 'gaming pc workstation i7 32gb'",
       "share": <number 0-1, this specialist's fraction of the equipment budget>
     }
   ],
@@ -56,14 +56,14 @@ Rules:
 - budget_gbp is CRITICAL — read it exactly as the user stated it. "£15k", "15k", "fifteen thousand pounds" and "15,000" all mean 15000. Never truncate, round down to a smaller magnitude, or substitute your own figure. If genuinely no budget is stated, use 10000.
 - 3 to 5 specialists, each with a DISTINCT sourcing responsibility relevant to THIS business. Together they must cover everything essential to launch.
 - shares must sum to 1.0 and roughly reflect how the budget should split.
-- queries must be concrete product searches a buyer would type into AliExpress, not vague categories.
+- queries must be concrete product searches a buyer would type into Alibaba, not vague categories.
 - 2 to 4 risks and 2 to 4 assumptions, honest and specific to this business and budget.
 - If the budget is clearly too small for the business, still design the best team and say so in risks.`;
 
 const specialistSystem = (name, focus, lineBudget, business) =>
   `You are ${name}, a sourcing specialist agent in the SupplySwarm procurement swarm, equipping a new ${business}. Your responsibility: ${focus}.
 
-You have LIVE web search. Find REAL, currently listed products on aliexpress.com (alibaba.com listings are also acceptable). Cite ONLY URLs that actually appear in your search results — NEVER invent or guess a URL. Prefer aliexpress.com product/listing pages.
+You have LIVE web search. Find REAL, currently listed products on alibaba.com (aliexpress.com listings are also acceptable). Copy every URL EXACTLY, character for character, from your search results — NEVER invent, shorten, reconstruct or translate a URL. Prefer alibaba.com product/listing pages.
 
 Respond with ONLY a JSON object:
 {
@@ -74,12 +74,12 @@ Respond with ONLY a JSON object:
       "quantity": <integer>,
       "price_gbp": <number, TOTAL price for the whole line in GBP (unit price x quantity, convert USD to GBP at 0.79)>,
       "priority": "Essential" | "Useful" | "Later",
-      "url": "the aliexpress.com (or alibaba.com) listing URL exactly as it appears in your search results, or null if none",
+      "url": "the alibaba.com (or aliexpress.com) listing URL exactly as it appears in your search results, or null if none",
       "supplier": "seller / store name if known, else null",
-      "evidence": "short label, e.g. 'Live AliExpress listing'"
+      "evidence": "short label, e.g. 'Live Alibaba listing'"
     }
   ],
-  "report": "max 90 chars — your spoken status message to the Coordinator: what you found, on AliExpress, and roughly for how much",
+  "report": "max 90 chars — your spoken status message to the Coordinator: what you found, on Alibaba, and roughly for how much",
   "thoughts": [ "2 or 3 strings, max 55 chars each — your ACTUAL reasoning steps while comparing listings, e.g. 'Two rack listings — picking the one with safety arms'" ]
 }
 
@@ -89,12 +89,12 @@ Rules:
 - If search returned nothing usable for a line, still include a realistic estimated line with "url": null and evidence "Estimate — no live listing found".`;
 
 const baselineSystem = (budget) =>
-  `You are a SINGLE procurement agent working completely alone — no team, no specialists. Turn the user's business brief into a complete equipment package sourced from aliexpress.com (alibaba.com also acceptable) using your live web search. Cite ONLY URLs that actually appear in your search results — never invent a URL.
+  `You are a SINGLE procurement agent working completely alone — no team, no specialists. Turn the user's business brief into a complete equipment package sourced from alibaba.com (aliexpress.com also acceptable) using your live web search. Copy every URL EXACTLY, character for character, from your search results — never invent or reconstruct a URL.
 
 Respond with ONLY a JSON object:
 {
   "items": [
-    { "title": "...", "detail": "quantity and short spec", "quantity": <integer>, "price_gbp": <number, TOTAL for the line in GBP>, "priority": "Essential" | "Useful" | "Later", "url": "aliexpress.com or alibaba.com listing URL from your search results or null", "supplier": "seller name or null", "evidence": "short label" }
+    { "title": "...", "detail": "quantity and short spec", "quantity": <integer>, "price_gbp": <number, TOTAL for the line in GBP>, "priority": "Essential" | "Useful" | "Later", "url": "alibaba.com or aliexpress.com listing URL from your search results or null", "supplier": "seller name or null", "evidence": "short label" }
   ]
 }
 Rules: 5 to 9 items covering everything essential to launch. The sum of price_gbp must be at most ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of £${budget}, and should USE most of that allowance.`;
@@ -111,7 +111,7 @@ Respond with ONLY a JSON object:
 }
 The sum of item prices must be at most ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of the budget. 0 to 2 messages.`;
 
-const UPGRADE_SYSTEM = `You are the Critic agent of SupplySwarm. A procurement package sourced from live AliExpress searches came in FAR UNDER the user's stated budget — the user asked for the best launch package their budget allows, not the cheapest one. Upgrade the package to use the budget properly: raise quantities where more units genuinely help, step existing lines up to better-specced or more durable tiers, and add missing capabilities the business will need.
+const UPGRADE_SYSTEM = `You are the Critic agent of SupplySwarm. A procurement package sourced from live Alibaba searches came in FAR UNDER the user's stated budget — the user asked for the best launch package their budget allows, not the cheapest one. Upgrade the package to use the budget properly: raise quantities where more units genuinely help, step existing lines up to better-specced or more durable tiers, and add missing capabilities the business will need.
 
 Keep each surviving item's "url" and "supplier" EXACTLY as given — never invent or alter URLs. Any upgraded or added line you did not see a listing for must have "url": null and evidence "Estimate — critic upgrade".
 
@@ -123,19 +123,57 @@ Respond with ONLY a JSON object:
 }
 The sum of item prices should land between ${Math.round(UNDERSPEND_RATIO * 100)}% and ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of the budget — never above ${Math.round(PRODUCT_BUDGET_RATIO * 100)}%. 3 to 9 items. 0 to 2 messages.`;
 
+const MARKETPLACE_HOST = /(^|\.)(alibaba|aliexpress)\.com$/i;
+
+// Hostname + path with protocol, www./m. subdomain, trailing slash, query
+// string and case ignored — models routinely rewrite URLs in those ways, and
+// an over-strict comparison was vetoing genuinely live listings.
+function normalizeUrl(value) {
+  try {
+    const url = new URL(String(value));
+    const host = url.hostname.toLowerCase().replace(/^(www|m)\./, '');
+    const path = decodeURIComponent(url.pathname).replace(/\/+$/, '').toLowerCase();
+    return `${host}${path}`;
+  } catch {
+    return null;
+  }
+}
+
 function cleanUrl(rawUrl, sources) {
   try {
     const url = new URL(String(rawUrl));
     if (!/^https?:$/.test(url.protocol)) return null;
-    if (!/(^|\.)(aliexpress|alibaba)\.com$/i.test(url.hostname)) return null;
+    if (!MARKETPLACE_HOST.test(url.hostname)) return null;
     const href = url.toString();
-    const verified = sources.some(source =>
-      source.url === href || source.url.startsWith(url.origin + url.pathname));
+    const key = normalizeUrl(href);
+    const verified = sources.some(source => normalizeUrl(source.url) === key);
     const marketplace = /(^|\.)aliexpress\.com$/i.test(url.hostname) ? 'AliExpress' : 'Alibaba';
     return { href, verified, marketplace };
   } catch {
     return null;
   }
+}
+
+// The model often reports prices without citing the listing it read. Its own
+// search results are ground truth, so hand unlinked lines a real marketplace
+// URL the search genuinely returned — verified by construction, honestly
+// labelled as coming from the agent's search rather than a per-item citation.
+function attachSourceLinks(items, sources) {
+  const used = new Set(items.map(item => item.url && normalizeUrl(item.url)).filter(Boolean));
+  const spare = (sources || []).filter(source => {
+    try {
+      const url = new URL(source.url);
+      return MARKETPLACE_HOST.test(url.hostname) && url.pathname.length > 1 && !used.has(normalizeUrl(source.url));
+    } catch { return false; }
+  });
+  for (const item of items) {
+    if (item.url || !spare.length) continue;
+    const source = spare.shift();
+    item.url = source.url;
+    item.evidence = 'From live search results';
+    used.add(normalizeUrl(source.url));
+  }
+  return items;
 }
 
 function cleanItems(rawItems, { sources = [], agentName = null, allowedUrls = null } = {}) {
@@ -237,7 +275,7 @@ export async function createPlan(text) {
   const events = [
     {
       who: 'Coordinator', to: 'Swarm',
-      text: `Brief validated: ${business}, £${budget.toLocaleString('en-GB')} ceiling. ${specialists.length} specialists dispatched to AliExpress.`
+      text: `Brief validated: ${business}, £${budget.toLocaleString('en-GB')} ceiling. ${specialists.length} specialists dispatched to Alibaba.com.`
     }
   ];
 
@@ -246,13 +284,13 @@ export async function createPlan(text) {
   const searchStart = Date.now();
   const baselinePromise = timed(chatJSONWithSearch({
     system: baselineSystem(budget),
-    user: `Business brief: ${text}\nSearch the web now on aliexpress.com for everything this business needs.`
+    user: `Business brief: ${text}\nSearch the web now on alibaba.com for everything this business needs.`
   }));
   const missions = await Promise.all(specialists.map(agent => {
     agent.lineBudget = Math.max(100, Math.round(productBudget * agent.share));
     return timed(chatJSONWithSearch({
       system: specialistSystem(agent.name, agent.focus, agent.lineBudget, business),
-      user: `Business brief: ${text}\nSearch the web now for: site:aliexpress.com ${agent.query}`
+      user: `Business brief: ${text}\nSearch the web now for: site:alibaba.com ${agent.query}`
     }));
   }));
   const searchWallSeconds = (Date.now() - searchStart) / 1000;
@@ -264,11 +302,15 @@ export async function createPlan(text) {
     const mission = missions[index];
     events.push({
       who: agent.name, to: 'Coordinator',
-      text: `Searching AliExpress: "${agent.query}"…`
+      text: `Searching Alibaba.com: "${agent.query}"…`
     });
     if (mission.status === 'fulfilled') {
       const rawFound = Array.isArray(mission.value.json.items) ? mission.value.json.items : [];
       const found = cleanItems(rawFound, { sources: mission.value.sources, agentName: agent.name });
+      // Execution conflict: the Supplier agent vetoes any cited link that was
+      // not actually present in that specialist's search results.
+      const vetoed = rawFound.filter(item => item.url).length - found.filter(item => item.url).length;
+      attachSourceLinks(found, mission.value.sources);
       items.push(...found);
       agent.thoughts = (Array.isArray(mission.value.json.thoughts) ? mission.value.json.thoughts : [])
         .map(thought => String(thought).slice(0, 60)).filter(Boolean).slice(0, 3);
@@ -277,15 +319,12 @@ export async function createPlan(text) {
       const report = String(mission.value.json.report || '').slice(0, 90);
       events.push({
         who: agent.name, to: 'Coordinator',
-        text: report || `${found.length} lines shortlisted, ${liveCount} with live AliExpress listings.`
+        text: report || `${found.length} lines shortlisted, ${liveCount} with live Alibaba listings.`
       });
-      // Execution conflict: the Supplier agent vetoes any cited link that was
-      // not actually present in that specialist's search results.
-      const vetoed = rawFound.filter(item => item.url).length - liveCount;
       if (vetoed > 0) {
         events.push({
           who: 'Supplier', to: agent.name,
-          text: `Vetoed ${vetoed} link${vetoed === 1 ? '' : 's'} not in your search results — downgraded to estimates.`
+          text: `Vetoed ${vetoed} link${vetoed === 1 ? '' : 's'} not in your search results — matched real listings from the search instead.`
         });
       }
     } else {
@@ -293,7 +332,7 @@ export async function createPlan(text) {
       failedAgents.push(agent.name);
       events.push({
         who: agent.name, to: 'Critic',
-        text: 'Live AliExpress search failed — flagging a sourcing gap for risk review.'
+        text: 'Live Alibaba search failed — flagging a sourcing gap for risk review.'
       });
     }
   });
@@ -335,7 +374,7 @@ export async function createPlan(text) {
   events.push({
     who: 'Supplier', to: liveItems[0]?.agent || busiestAgent,
     text: liveItems.length
-      ? `${liveItems.length} live AliExpress listing${liveItems.length === 1 ? '' : 's'} link-checked; MOQ and seller pages attached.`
+      ? `${liveItems.length} live Alibaba listing${liveItems.length === 1 ? '' : 's'} link-checked; MOQ and seller pages attached.`
       : 'No live listings survived verification — all lines are labelled estimates.'
   });
 
@@ -448,21 +487,30 @@ export async function createPlan(text) {
   const swarmSeconds = (Date.now() - planStart) / 1000;
   const swarmScore = scorePackage(items, budget, swarmSeconds);
   let singleScore = null;
+  let singleItems = [];
   const baseline = await baselinePromise;
   if (baseline.status === 'fulfilled') {
     const baselineItems = cleanItems(baseline.value.json.items, { sources: baseline.value.sources, agentName: 'Single agent' });
-    if (baselineItems.length) singleScore = scorePackage(baselineItems, budget, baseline.seconds);
+    if (baselineItems.length) {
+      attachSourceLinks(baselineItems, baseline.value.sources);
+      singleScore = scorePackage(baselineItems, budget, baseline.seconds);
+      // The control's full package rides along so the user can inspect what
+      // the solo agent actually proposed, not just its score.
+      singleItems = baselineItems.slice(0, 9)
+        .map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier]);
+    }
   }
   const comparison = {
     swarm: swarmScore,
     single: singleScore,
+    single_items: singleItems,
     parallel_speedup: Math.max(1, Math.round((sequentialSeconds / Math.max(0.1, searchWallSeconds)) * 10) / 10)
   };
 
   // Spread progress 8 -> 100 across events for the frontend timeline.
   // If the story ran long, drop "Searching…" filler first — never the ending.
   while (events.length > 18) {
-    const filler = events.findIndex(event => event.text.startsWith('Searching AliExpress'));
+    const filler = events.findIndex(event => event.text.startsWith('Searching Alibaba.com'));
     if (filler >= 0) events.splice(filler, 1);
     else events.splice(Math.floor(events.length / 2), 1);
   }

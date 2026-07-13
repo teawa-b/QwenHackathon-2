@@ -232,7 +232,7 @@ function workspaceView() {
         </section>
         <aside class="brief-panel">
           <div class="panel-title"><span>VALIDATED BRIEF</span><b>LOCKED</b></div>
-          <dl><div><dt>Business</dt><dd>${s.type}</dd></div><div><dt>Location</dt><dd>${state.city}, UK</dd></div><div><dt>Team</dt><dd>${state.team} people</dd></div><div><dt>Budget</dt><dd>${money(state.budget)}</dd></div><div><dt>Scope</dt><dd>Equipment only</dd></div><div><dt>Marketplace</dt><dd>AliExpress</dd></div></dl>
+          <dl><div><dt>Business</dt><dd>${s.type}</dd></div><div><dt>Location</dt><dd>${state.city}, UK</dd></div><div><dt>Team</dt><dd>${state.team} people</dd></div><div><dt>Budget</dt><dd>${money(state.budget)}</dd></div><div><dt>Scope</dt><dd>Equipment only</dd></div><div><dt>Marketplace</dt><dd>Alibaba.com</dd></div></dl>
           <div class="guardrail"><b>HUMAN APPROVAL</b><span>Required before supplier contact or purchase</span></div>
         </aside>
       </section>
@@ -264,6 +264,10 @@ function resultsView() {
           <div class="single"><span>SINGLE AGENT (CONTROL)</span><b>${cmp.single ? `${cmp.single.verified_links} live listing${cmp.single.verified_links === 1 ? '' : 's'}` : 'RUN FAILED'}</b><p>${cmp.single ? `${cmp.single.items} items · ${money(cmp.single.landed_total)} landed · ${cmp.single.budget_valid ? 'inside budget' : 'OVER budget'} · ${cmp.single.seconds}s` : 'The solo agent returned no usable package for this brief.'}</p></div>
           <div class="multi"><span>SUPPLYSWARM</span><b>${cmp.swarm.verified_links} live listing${cmp.swarm.verified_links === 1 ? '' : 's'}</b><p>${cmp.swarm.items} items · ${money(cmp.swarm.landed_total)} landed · ${cmp.swarm.budget_valid ? 'inside budget' : 'over budget'} · ${cmp.swarm.seconds}s</p></div>
         </div>
+        ${cmp.single_items?.length ? `<details class="single-package">
+          <summary>View the single agent's full package (${cmp.single_items.length} items)</summary>
+          <div class="items">${cmp.single_items.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[5] ? `<a href="${item[5]}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a>` : item[0]}</h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span>${item[5] ? `<span class="tag-link">${marketplaceLabel(item[5])}</span>` : ''}</div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+        </details>` : ''}
       </section>` : '';
   const insight = plan
     ? `${measuredCompare}<section class="evaluation">
@@ -297,7 +301,7 @@ function resultsView() {
         <div class="budget-meter"><i style="width:${Math.min(100, total / state.budget * 100)}%"></i></div>
         <div class="remaining"><span>Budget ${overBudget ? 'exceeded by' : 'remaining'}</span><b>${money(Math.abs(remaining))}</b></div>
         <dl><div><dt>Products</dt><dd>${money(subtotal)}</dd></div><div><dt>Shipping estimate</dt><dd>${money(finalShipping)}</dd></div><div><dt>VAT & duties estimate</dt><dd>${money(finalTax)}</dd></div><div><dt>Contingency</dt><dd>${money(finalContingency)}</dd></div></dl>
-        <p class="estimate-note">${plan ? 'Linked items point to real AliExpress / Alibaba listings found by Qwen live web search; unlinked lines are labelled estimates. Confirm prices and MOQ on the listing before purchasing.' : 'Estimates are indicative, not supplier quotations. Demo catalogue data is clearly separated from live marketplace data.'}</p>
+        <p class="estimate-note">${plan ? 'Linked items point to real Alibaba.com listings found by Qwen live web search; unlinked lines are labelled estimates. Confirm prices and MOQ on the listing before purchasing.' : 'Estimates are indicative, not supplier quotations. Demo catalogue data is clearly separated from live marketplace data.'}</p>
       </aside>
     </section>
     ${insight}
@@ -457,7 +461,7 @@ async function recordingToWav(blob) {
 function showAbout() {
   const dialog = document.createElement('dialog');
   dialog.className = 'about-dialog';
-  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division: each specialist agent runs its own Qwen call with live web search against AliExpress, real listing links are verified against the search results, a deterministic calculator handles landed costs, and a Critic agent revises over-budget packages and upgrades underspent ones.</p><p>Without a Qwen Cloud key the app falls back to a transparent demo catalogue — nothing is ever simulated as live.</p>`;
+  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division: each specialist agent runs its own Qwen call with live web search against Alibaba.com, real listing links are verified against the search results, a deterministic calculator handles landed costs, and a Critic agent revises over-budget packages and upgrades underspent ones.</p><p>Without a Qwen Cloud key the app falls back to a transparent demo catalogue — nothing is ever simulated as live.</p>`;
   document.body.append(dialog); dialog.showModal();
   dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
 }
@@ -570,7 +574,7 @@ async function playTimeline(events) {
 const PLANNING_LINES = [
   'Qwen Coordinator is analysing your brief…',
   'Designing your specialist agent team…',
-  'Specialists are searching AliExpress live for real listings…',
+  'Specialists are searching Alibaba.com live for real listings…',
   'Verifying listing links, prices and suppliers…',
   'Fitting the package inside your budget envelope…',
   'Running critic review on the draft package…'

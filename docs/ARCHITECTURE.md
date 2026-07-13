@@ -1,6 +1,6 @@
 # SupplySwarm — Architecture
 
-SupplySwarm is a multi-agent procurement system (**Track 3: Agent Society**). A user describes a business in one sentence (typed, or spoken to a 3D robot); a society of Qwen-powered agents decomposes the task, searches AliExpress live, negotiates over a shared budget, resolves conflicts, and returns an evidence-linked equipment package — measured against a single-agent control on every run.
+SupplySwarm is a multi-agent procurement system (**Track 3: Agent Society**). A user describes a business in one sentence (typed, or spoken to a 3D robot); a society of Qwen-powered agents decomposes the task, searches Alibaba.com live, negotiates over a shared budget, resolves conflicts, and returns an evidence-linked equipment package — measured against a single-agent control on every run.
 
 ## System overview
 
@@ -55,7 +55,7 @@ sequenceDiagram
     participant K as Critic (Qwen)
 
     U->>C: business, city, team, budget
-    C->>S1: role, focus, AliExpress query, budget share
+    C->>S1: role, focus, Alibaba query, budget share
     C->>B: same brief, no team (baseline)
     S1-->>V: items + cited URLs + reasoning "thoughts"
     Note over V: URL verification: a link survives ONLY if it<br/>appeared in that agent's real search results
@@ -69,10 +69,10 @@ sequenceDiagram
 ```
 
 ### Task decomposition & role assignment
-The **Coordinator** call returns a bespoke team for *this* brief: per-agent code/name/focus, a concrete AliExpress search query, and a **share of the budget** (shares normalised server-side). Supplier-verification and Critic agents are appended with fixed roles.
+The **Coordinator** call returns a bespoke team for *this* brief: per-agent code/name/focus, a concrete Alibaba search query, and a **share of the budget** (shares normalised server-side). Supplier-verification and Critic agents are appended with fixed roles.
 
 ### Live sourcing with verified links
-Each specialist runs `enable_search: true, search_options: { forced_search, enable_source }` — Qwen performs a real web search and the API returns the **actual result URLs** it saw. The planner enforces: *a cited link survives only if it appeared in that agent's own search results and is on aliexpress.com or alibaba.com*. Verified lines are labelled **“Live AliExpress listing”** / **“Live Alibaba listing”**; everything else is downgraded to a labelled estimate. No displayed link can be fabricated.
+Each specialist runs `enable_search: true, search_options: { forced_search, enable_source }` — Qwen performs a real web search and the API returns the **actual result URLs** it saw. The planner enforces: *a cited link survives only if it appeared in that agent's own search results and is on alibaba.com (or aliexpress.com)*. Verified lines are labelled **“Live Alibaba listing”**; lines without a citation are handed a real URL from the agent's own search results where one exists; everything else is downgraded to a labelled estimate. No displayed link can be fabricated.
 
 ### Dialogue, disagreement, conflict resolution
 Every event is `who → to` dialogue, replayed in the console and acted out in 3D:
@@ -127,4 +127,4 @@ src/pdf.js          Branded PDF report via jspdf (lazy-loaded chunk)
 ```
 
 ## Scaling & productisation
-The planner is stateless — horizontal scale is trivial. The specialist layer fans out per category, so richer teams cost latency ≈ the slowest search, not the sum. Marketplace adapters (the AliExpress query + URL-verification policy) are isolated, so adding Amazon Business / Made-in-China is a prompt + hostname-allowlist change. The verified-link policy generalises to any grounded-citation agent product.
+The planner is stateless — horizontal scale is trivial. The specialist layer fans out per category, so richer teams cost latency ≈ the slowest search, not the sum. Marketplace adapters (the Alibaba query + URL-verification policy) are isolated, so adding Amazon Business / Made-in-China is a prompt + hostname-allowlist change. The verified-link policy generalises to any grounded-citation agent product.

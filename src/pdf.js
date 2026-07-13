@@ -1,5 +1,5 @@
 // Branded A4 PDF report for the companion screen: full package breakdown,
-// live AliExpress/Alibaba listing links, landed-cost maths, the measured single-agent
+// live Alibaba listing links, landed-cost maths, the measured single-agent
 // comparison, risks/assumptions and the Qwen concept image.
 
 const money = value =>
@@ -49,7 +49,7 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
   doc.setFontSize(11).setTextColor(220, 231, 221);
   doc.text('AGENT SOCIETY LAUNCH PLAN', M, 62);
   doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(141, 153, 146);
-  doc.text(`Generated ${new Date().toLocaleString('en-GB')} · Qwen Cloud live web search · aliexpress.com`, M, 78);
+  doc.text(`Generated ${new Date().toLocaleString('en-GB')} · Qwen Cloud live web search · alibaba.com`, M, 78);
   y = 120;
 
   // ---- Brief ----
@@ -155,6 +155,29 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
       doc.text(`Parallel sourcing was ${cmp.parallel_speedup}x faster than running the specialists sequentially.`, M, y);
       y += 18;
     }
+    if (cmp.single_items?.length) {
+      sectionTitle("SINGLE AGENT'S PACKAGE (FOR REFERENCE)");
+      for (let i = 0; i < cmp.single_items.length; i++) {
+        const [title, detail, price, priority, evidence, url, supplier] = cmp.single_items[i];
+        const meta = [detail, supplier, `${priority} · ${evidence}`].filter(Boolean).join('  ·  ');
+        const metaLines = doc.setFont('helvetica', 'normal').setFontSize(8).splitTextToSize(meta, W - M * 2 - 110);
+        ensureRoom(13 + metaLines.length * 10 + (url ? 11 : 0));
+        doc.setFont('helvetica', 'bold').setFontSize(9.5).setTextColor(...DARK);
+        doc.text(String(title).slice(0, 70), M, y);
+        doc.text(money(price), W - M, y, { align: 'right' });
+        y += 12;
+        doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...MID);
+        doc.text(metaLines, M, y);
+        y += metaLines.length * 10;
+        if (url) {
+          doc.setTextColor(30, 90, 200);
+          doc.textWithLink('View listing', M, y, { url });
+          y += 11;
+        }
+        y += 5;
+      }
+      y += 6;
+    }
   }
 
   // ---- Risks & assumptions ----
@@ -178,7 +201,7 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p);
     doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(150, 158, 152);
-    doc.text('Linked items point to real AliExpress / Alibaba listings found by Qwen live web search; unlinked lines are labelled estimates. Prices are model readings, not quotations — confirm price and MOQ on the listing. No purchases were made.', M, H - 30, { maxWidth: W - M * 2 });
+    doc.text('Linked items point to real Alibaba.com listings found by Qwen live web search; unlinked lines are labelled estimates. Prices are model readings, not quotations — confirm price and MOQ on the listing. No purchases were made.', M, H - 30, { maxWidth: W - M * 2 });
     doc.text(`${p} / ${pages}`, W - M, H - 18, { align: 'right' });
   }
 
