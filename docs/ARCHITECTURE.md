@@ -1,6 +1,6 @@
 # SupplySwarm — Architecture
 
-SupplySwarm is a multi-agent procurement system (**Track 3: Agent Society**). A user describes a business in one sentence (typed, or spoken to a 3D robot); a society of Qwen-powered agents decomposes the task, searches Alibaba.com live, negotiates over a shared budget, resolves conflicts, and returns an evidence-linked equipment package — measured against a single-agent control on every run.
+SupplySwarm is a multi-agent procurement system (**Track 3: Agent Society**). A user describes a business in one sentence (typed, or spoken to a 3D robot); a society of Qwen-powered agents decomposes the task, searches AliExpress live, negotiates over a shared budget, resolves conflicts, and returns an evidence-linked equipment package — measured against a single-agent control on every run.
 
 ## System overview
 
@@ -39,7 +39,7 @@ flowchart TB
 
 ## Connect-code companion (server/live.js, src/connect.js)
 
-The 3D/VR room registers as a **host** over WebSocket and receives a 5-letter code (unambiguous alphabet, no 0/O/1/I). Phones join at `/connect` as **companions**: the server holds a per-session snapshot (brief, agents with their Qwen reasoning, dialogue events, plan, concept image, requests) so late joiners and reconnects catch up instantly, then relays every host update live. Companions send **requests** addressed to a specific agent or the Hub; the server fans them out to the host — where the target robot turns to the viewer and shows the message as an orange bubble — and echoes them to every other companion. Hardening: payload caps, JSON validation, unknown message types dropped (never rebroadcast), 8 companions/session, 200 sessions, 2 h TTL with a 5-minute host-reconnect grace, 30 s keepalive pings. The companion's **PDF report** (jspdf, lazy-loaded chunk) embeds the concept image via a server-side proxy locked to DashScope's OSS host, avoiding canvas tainting without loosening CORS.
+The 3D/VR room registers as a **host** over WebSocket and receives a 5-letter code (unambiguous alphabet, no 0/O/1/I). Phones join at `/connect` as **companions**: the server holds a per-session snapshot (brief, agents with their Qwen reasoning, dialogue events, plan, concept image, requests) so late joiners and reconnects catch up instantly, then relays every host update live. Companions send **requests** addressed to a specific agent or the Hub; the server fans them out to the host — where the target robot turns to the viewer and shows the message as an orange bubble — and echoes them to every other companion. Hardening: payload caps, JSON validation, unknown message types dropped (never rebroadcast), 8 companions/session, 200 sessions, 2 h TTL with a 5-minute host-reconnect grace, 30 s keepalive pings. The **PDF report** (jspdf, lazy-loaded chunk — downloadable from the companion and from the main results page) embeds the concept image via a server-side proxy locked to DashScope's OSS host, avoiding canvas tainting without loosening CORS.
 
 ## The agent society (server/planner.js)
 
@@ -55,29 +55,30 @@ sequenceDiagram
     participant K as Critic (Qwen)
 
     U->>C: business, city, team, budget
-    C->>S1: role, focus, Alibaba query, budget share
+    C->>S1: role, focus, AliExpress query, budget share
     C->>B: same brief, no team (baseline)
     S1-->>V: items + cited URLs + reasoning "thoughts"
     Note over V: URL verification: a link survives ONLY if it<br/>appeared in that agent's real search results
     V->>V: budget-share negotiation (overspenders ask,<br/>Coordinator reallocates real headroom)
     V->>V: landed cost = products + 7.5% shipping<br/>+ 8% VAT/duties + 5% contingency
     V->>K: if over budget: full package + overspend
-    K-->>V: revised items + messages to specific agents
+    V->>K: if far under budget: package + unused headroom
+    K-->>V: revised/upgraded items + messages to specific agents
     B-->>V: control package, scored by the SAME validators
     V-->>U: plan + who→to event dialogue + measured comparison
 ```
 
 ### Task decomposition & role assignment
-The **Coordinator** call returns a bespoke team for *this* brief: per-agent code/name/focus, a concrete Alibaba search query, and a **share of the budget** (shares normalised server-side). Supplier-verification and Critic agents are appended with fixed roles.
+The **Coordinator** call returns a bespoke team for *this* brief: per-agent code/name/focus, a concrete AliExpress search query, and a **share of the budget** (shares normalised server-side). Supplier-verification and Critic agents are appended with fixed roles.
 
 ### Live sourcing with verified links
-Each specialist runs `enable_search: true, search_options: { forced_search, enable_source }` — Qwen performs a real web search and the API returns the **actual result URLs** it saw. The planner enforces: *a cited link survives only if it appeared in that agent's own search results and is on alibaba.com*. Verified lines are labelled **“Live Alibaba listing”**; everything else is downgraded to a labelled estimate. No displayed link can be fabricated.
+Each specialist runs `enable_search: true, search_options: { forced_search, enable_source }` — Qwen performs a real web search and the API returns the **actual result URLs** it saw. The planner enforces: *a cited link survives only if it appeared in that agent's own search results and is on aliexpress.com or alibaba.com*. Verified lines are labelled **“Live AliExpress listing”** / **“Live Alibaba listing”**; everything else is downgraded to a labelled estimate. No displayed link can be fabricated.
 
 ### Dialogue, disagreement, conflict resolution
 Every event is `who → to` dialogue, replayed in the console and acted out in 3D:
 - **Supplier vetoes** — cited URLs not present in the search results are rejected on-screen.
 - **Budget negotiation** — a specialist that overshoots its share requests more; the Coordinator reallocates *real* headroom from an underspender, or refuses and escalates to the Critic.
-- **Critic revision** — over-budget packages are revised; the Critic messages the specific agents whose lines it cut. Revision passes may only reuse URLs that survived the sourcing round.
+- **Critic revision** — over-budget packages are revised and heavily underspent packages are upgraded toward the ceiling; the Critic messages the specific agents whose lines it changed. Revision passes may only reuse URLs that survived the sourcing round.
 
 ### Measured efficiency vs single agent
 A solo Qwen agent with **identical tools** runs concurrently as a control. Both packages are scored by the **same deterministic validators**: verified links, item coverage, landed-cost budget validity, wall-clock seconds — plus the measured parallel-sourcing speed-up (Σ specialist durations ÷ wall time). The results page shows the live scorecard; nothing is scripted.
@@ -126,4 +127,4 @@ src/pdf.js          Branded PDF report via jspdf (lazy-loaded chunk)
 ```
 
 ## Scaling & productisation
-The planner is stateless — horizontal scale is trivial. The specialist layer fans out per category, so richer teams cost latency ≈ the slowest search, not the sum. Marketplace adapters (the Alibaba query + URL-verification policy) are isolated, so adding Amazon Business / Made-in-China is a prompt + hostname-allowlist change. The verified-link policy generalises to any grounded-citation agent product.
+The planner is stateless — horizontal scale is trivial. The specialist layer fans out per category, so richer teams cost latency ≈ the slowest search, not the sum. Marketplace adapters (the AliExpress query + URL-verification policy) are isolated, so adding Amazon Business / Made-in-China is a prompt + hostname-allowlist change. The verified-link policy generalises to any grounded-citation agent product.

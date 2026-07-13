@@ -4,8 +4,12 @@ import { chatJSON, chatJSONWithSearch } from './qwen.js';
 const SHIPPING_RATE = 0.075;
 const TAX_RATE = 0.08; // VAT + duties allowance on goods + shipping
 const CONTINGENCY_RATE = 0.05;
-const MAX_REVISIONS = 1;
+const MAX_REVISIONS = 2;
 const PRODUCT_BUDGET_RATIO = 0.82; // leave headroom for shipping/tax/contingency
+// A package that uses less than this share of the ceiling is treated as an
+// underspend conflict: the user asked for a launch at THIS budget, not a
+// fraction of it, so the Critic runs an upgrade round.
+const UNDERSPEND_RATIO = 0.72;
 
 export function landedCost(items, budget) {
   // price_gbp is the total for the whole line, not a unit price.
@@ -26,7 +30,7 @@ export function landedCost(items, budget) {
   };
 }
 
-const COORD_SYSTEM = `You are the Coordinator of SupplySwarm, a society of AI procurement agents that turns a business idea and budget into an Alibaba.com sourcing mission. You do NOT pick products yourself — you design the specialist team that will each search Alibaba.com live.
+const COORD_SYSTEM = `You are the Coordinator of SupplySwarm, a society of AI procurement agents that turns a business idea and budget into an AliExpress sourcing mission. You do NOT pick products yourself — you design the specialist team that will each search AliExpress live.
 
 Given the user's business brief, respond with ONLY a JSON object matching this exact schema:
 
@@ -40,7 +44,7 @@ Given the user's business brief, respond with ONLY a JSON object matching this e
       "code": "3-4 letter code",
       "name": "one word role, e.g. 'Computing'",
       "focus": "3-5 word sourcing focus",
-      "query": "the exact Alibaba.com search phrase for the equipment this specialist must source, e.g. 'gaming pc workstation i7 32gb'",
+      "query": "the exact AliExpress search phrase for the equipment this specialist must source, e.g. 'gaming pc workstation i7 32gb'",
       "share": <number 0-1, this specialist's fraction of the equipment budget>
     }
   ],
@@ -49,16 +53,17 @@ Given the user's business brief, respond with ONLY a JSON object matching this e
 }
 
 Rules:
+- budget_gbp is CRITICAL — read it exactly as the user stated it. "£15k", "15k", "fifteen thousand pounds" and "15,000" all mean 15000. Never truncate, round down to a smaller magnitude, or substitute your own figure. If genuinely no budget is stated, use 10000.
 - 3 to 5 specialists, each with a DISTINCT sourcing responsibility relevant to THIS business. Together they must cover everything essential to launch.
 - shares must sum to 1.0 and roughly reflect how the budget should split.
-- queries must be concrete product searches a buyer would type into Alibaba, not vague categories.
+- queries must be concrete product searches a buyer would type into AliExpress, not vague categories.
 - 2 to 4 risks and 2 to 4 assumptions, honest and specific to this business and budget.
 - If the budget is clearly too small for the business, still design the best team and say so in risks.`;
 
 const specialistSystem = (name, focus, lineBudget, business) =>
   `You are ${name}, a sourcing specialist agent in the SupplySwarm procurement swarm, equipping a new ${business}. Your responsibility: ${focus}.
 
-You have LIVE web search. Find REAL, currently listed products on alibaba.com. Cite ONLY URLs that actually appear in your search results — NEVER invent or guess a URL. Prefer alibaba.com product/listing pages.
+You have LIVE web search. Find REAL, currently listed products on aliexpress.com (alibaba.com listings are also acceptable). Cite ONLY URLs that actually appear in your search results — NEVER invent or guess a URL. Prefer aliexpress.com product/listing pages.
 
 Respond with ONLY a JSON object:
 {
@@ -69,30 +74,30 @@ Respond with ONLY a JSON object:
       "quantity": <integer>,
       "price_gbp": <number, TOTAL price for the whole line in GBP (unit price x quantity, convert USD to GBP at 0.79)>,
       "priority": "Essential" | "Useful" | "Later",
-      "url": "the alibaba.com listing URL exactly as it appears in your search results, or null if none",
+      "url": "the aliexpress.com (or alibaba.com) listing URL exactly as it appears in your search results, or null if none",
       "supplier": "seller / store name if known, else null",
-      "evidence": "short label, e.g. 'Live Alibaba listing'"
+      "evidence": "short label, e.g. 'Live AliExpress listing'"
     }
   ],
-  "report": "max 90 chars — your spoken status message to the Coordinator: what you found, on Alibaba, and roughly for how much",
+  "report": "max 90 chars — your spoken status message to the Coordinator: what you found, on AliExpress, and roughly for how much",
   "thoughts": [ "2 or 3 strings, max 55 chars each — your ACTUAL reasoning steps while comparing listings, e.g. 'Two rack listings — picking the one with safety arms'" ]
 }
 
 Rules:
-- 1 to 3 items. The SUM of your price_gbp values must be at most £${lineBudget}.
+- 1 to 3 items. The SUM of your price_gbp values must be at most £${lineBudget} — and this budget was allocated to be SPENT: aim for 80-100% of it with properly specced equipment, not bargain-bin substitutes that leave most of it unused.
 - Marketplace prices are often per-unit and in USD — multiply by quantity and convert.
 - If search returned nothing usable for a line, still include a realistic estimated line with "url": null and evidence "Estimate — no live listing found".`;
 
 const baselineSystem = (budget) =>
-  `You are a SINGLE procurement agent working completely alone — no team, no specialists. Turn the user's business brief into a complete equipment package sourced from alibaba.com using your live web search. Cite ONLY URLs that actually appear in your search results — never invent a URL.
+  `You are a SINGLE procurement agent working completely alone — no team, no specialists. Turn the user's business brief into a complete equipment package sourced from aliexpress.com (alibaba.com also acceptable) using your live web search. Cite ONLY URLs that actually appear in your search results — never invent a URL.
 
 Respond with ONLY a JSON object:
 {
   "items": [
-    { "title": "...", "detail": "quantity and short spec", "quantity": <integer>, "price_gbp": <number, TOTAL for the line in GBP>, "priority": "Essential" | "Useful" | "Later", "url": "alibaba.com listing URL from your search results or null", "supplier": "seller name or null", "evidence": "short label" }
+    { "title": "...", "detail": "quantity and short spec", "quantity": <integer>, "price_gbp": <number, TOTAL for the line in GBP>, "priority": "Essential" | "Useful" | "Later", "url": "aliexpress.com or alibaba.com listing URL from your search results or null", "supplier": "seller name or null", "evidence": "short label" }
   ]
 }
-Rules: 5 to 9 items covering everything essential to launch. The sum of price_gbp must be at most ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of £${budget}.`;
+Rules: 5 to 9 items covering everything essential to launch. The sum of price_gbp must be at most ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of £${budget}, and should USE most of that allowance.`;
 
 const REVISE_SYSTEM = `You are the Critic agent of SupplySwarm. A procurement package sourced from live Alibaba searches exceeded budget after landed costs were calculated deterministically. Revise the item list to bring it under budget while keeping every Essential capability (reduce quantities, move nice-to-haves to "Later", or cut lines).
 
@@ -106,15 +111,28 @@ Respond with ONLY a JSON object:
 }
 The sum of item prices must be at most ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of the budget. 0 to 2 messages.`;
 
+const UPGRADE_SYSTEM = `You are the Critic agent of SupplySwarm. A procurement package sourced from live AliExpress searches came in FAR UNDER the user's stated budget — the user asked for the best launch package their budget allows, not the cheapest one. Upgrade the package to use the budget properly: raise quantities where more units genuinely help, step existing lines up to better-specced or more durable tiers, and add missing capabilities the business will need.
+
+Keep each surviving item's "url" and "supplier" EXACTLY as given — never invent or alter URLs. Any upgraded or added line you did not see a listing for must have "url": null and evidence "Estimate — critic upgrade".
+
+Respond with ONLY a JSON object:
+{
+  "items": [ same item schema as provided, including url and supplier ],
+  "revision_note": "one line, max 90 chars, describing the upgrade made",
+  "messages": [ { "to": "name of the specialist agent whose line you changed", "text": "max 80 chars, what you told them and why" } ]
+}
+The sum of item prices should land between ${Math.round(UNDERSPEND_RATIO * 100)}% and ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of the budget — never above ${Math.round(PRODUCT_BUDGET_RATIO * 100)}%. 3 to 9 items. 0 to 2 messages.`;
+
 function cleanUrl(rawUrl, sources) {
   try {
     const url = new URL(String(rawUrl));
     if (!/^https?:$/.test(url.protocol)) return null;
-    if (!/(^|\.)alibaba\.com$/i.test(url.hostname)) return null;
+    if (!/(^|\.)(aliexpress|alibaba)\.com$/i.test(url.hostname)) return null;
     const href = url.toString();
     const verified = sources.some(source =>
       source.url === href || source.url.startsWith(url.origin + url.pathname));
-    return { href, verified };
+    const marketplace = /(^|\.)aliexpress\.com$/i.test(url.hostname) ? 'AliExpress' : 'Alibaba';
+    return { href, verified, marketplace };
   } catch {
     return null;
   }
@@ -133,7 +151,7 @@ function cleanItems(rawItems, { sources = [], agentName = null, allowedUrls = nu
       if (url && allowedUrls) url = allowedUrls.has(url) ? url : null;
       else if (url && !link.verified) url = null;
       let evidence = String(item.evidence || 'Qwen estimate').slice(0, 40);
-      if (url) evidence = allowedUrls ? allowedUrls.get(url) : 'Live Alibaba listing';
+      if (url) evidence = allowedUrls ? allowedUrls.get(url) : `Live ${link.marketplace} listing`;
       else if (item.url) evidence = 'Estimate — link unverified';
       return {
         title: String(item.title || '').slice(0, 80),
@@ -219,7 +237,7 @@ export async function createPlan(text) {
   const events = [
     {
       who: 'Coordinator', to: 'Swarm',
-      text: `Brief validated: ${business}, £${budget.toLocaleString('en-GB')} ceiling. ${specialists.length} specialists dispatched to Alibaba.com.`
+      text: `Brief validated: ${business}, £${budget.toLocaleString('en-GB')} ceiling. ${specialists.length} specialists dispatched to AliExpress.`
     }
   ];
 
@@ -228,13 +246,13 @@ export async function createPlan(text) {
   const searchStart = Date.now();
   const baselinePromise = timed(chatJSONWithSearch({
     system: baselineSystem(budget),
-    user: `Business brief: ${text}\nSearch the web now on alibaba.com for everything this business needs.`
+    user: `Business brief: ${text}\nSearch the web now on aliexpress.com for everything this business needs.`
   }));
   const missions = await Promise.all(specialists.map(agent => {
     agent.lineBudget = Math.max(100, Math.round(productBudget * agent.share));
     return timed(chatJSONWithSearch({
       system: specialistSystem(agent.name, agent.focus, agent.lineBudget, business),
-      user: `Business brief: ${text}\nSearch the web now for: site:alibaba.com ${agent.query}`
+      user: `Business brief: ${text}\nSearch the web now for: site:aliexpress.com ${agent.query}`
     }));
   }));
   const searchWallSeconds = (Date.now() - searchStart) / 1000;
@@ -246,7 +264,7 @@ export async function createPlan(text) {
     const mission = missions[index];
     events.push({
       who: agent.name, to: 'Coordinator',
-      text: `Searching Alibaba.com: "${agent.query}"…`
+      text: `Searching AliExpress: "${agent.query}"…`
     });
     if (mission.status === 'fulfilled') {
       const rawFound = Array.isArray(mission.value.json.items) ? mission.value.json.items : [];
@@ -259,7 +277,7 @@ export async function createPlan(text) {
       const report = String(mission.value.json.report || '').slice(0, 90);
       events.push({
         who: agent.name, to: 'Coordinator',
-        text: report || `${found.length} lines shortlisted, ${liveCount} with live Alibaba listings.`
+        text: report || `${found.length} lines shortlisted, ${liveCount} with live AliExpress listings.`
       });
       // Execution conflict: the Supplier agent vetoes any cited link that was
       // not actually present in that specialist's search results.
@@ -275,7 +293,7 @@ export async function createPlan(text) {
       failedAgents.push(agent.name);
       events.push({
         who: agent.name, to: 'Critic',
-        text: 'Live Alibaba search failed — flagging a sourcing gap for risk review.'
+        text: 'Live AliExpress search failed — flagging a sourcing gap for risk review.'
       });
     }
   });
@@ -317,7 +335,7 @@ export async function createPlan(text) {
   events.push({
     who: 'Supplier', to: liveItems[0]?.agent || busiestAgent,
     text: liveItems.length
-      ? `${liveItems.length} live Alibaba listing${liveItems.length === 1 ? '' : 's'} link-checked; MOQ and seller pages attached.`
+      ? `${liveItems.length} live AliExpress listing${liveItems.length === 1 ? '' : 's'} link-checked; MOQ and seller pages attached.`
       : 'No live listings survived verification — all lines are labelled estimates.'
   });
 
@@ -360,6 +378,55 @@ export async function createPlan(text) {
     }
   }
 
+  // Underspend conflict: the user asked for a launch at THIS budget. If the
+  // package leaves most of the ceiling unused, the Critic upgrades quantities
+  // and spec toward the ceiling instead of quietly handing back a cheap plan.
+  let upgraded = false;
+  if (cost.valid && cost.total < budget * UNDERSPEND_RATIO) {
+    events.push({
+      who: 'Critic', to: 'Swarm',
+      text: `Underspend conflict: only £${cost.total.toLocaleString('en-GB')} of the £${budget.toLocaleString('en-GB')} ceiling is used. Upgrading the package.`
+    });
+    try {
+      const upgrade = await chatJSON({
+        system: UPGRADE_SYSTEM,
+        user: JSON.stringify({
+          budget_gbp: budget,
+          unused_budget_gbp: budget - cost.total,
+          landed_cost: cost,
+          items
+        }),
+        temperature: 0.4
+      });
+      const upgradedItems = cleanItems(upgrade.items, { sources: [], allowedUrls }).slice(0, 9);
+      const upgradedCost = upgradedItems.length ? landedCost(upgradedItems, budget) : null;
+      // Only accept an upgrade that stays valid and actually spends more.
+      if (upgradedCost?.valid && upgradedCost.total > cost.total) {
+        items = upgradedItems;
+        cost = upgradedCost;
+        upgraded = true;
+        revisionNote = String(upgrade.revision_note || 'Package upgraded to make full use of the budget.').slice(0, 110);
+        for (const message of (Array.isArray(upgrade.messages) ? upgrade.messages : []).slice(0, 2)) {
+          const target = specialists.find(agent => agent.name.toLowerCase() === String(message.to || '').toLowerCase());
+          if (target && message.text) {
+            events.push({ who: 'Critic', to: target.name, text: String(message.text).slice(0, 90) });
+          }
+        }
+        events.push({ who: 'Critic', to: 'Coordinator', text: revisionNote });
+      } else {
+        events.push({
+          who: 'Critic', to: 'Coordinator',
+          text: 'Upgrade draft rejected by the validators — keeping the verified conservative package.'
+        });
+      }
+    } catch {
+      events.push({
+        who: 'Critic', to: 'Coordinator',
+        text: 'Upgrade pass failed — keeping the conservative package. Budget headroom remains.'
+      });
+    }
+  }
+
   events.push({
     who: 'Critic', to: 'Coordinator',
     text: cost.valid
@@ -395,7 +462,7 @@ export async function createPlan(text) {
   // Spread progress 8 -> 100 across events for the frontend timeline.
   // If the story ran long, drop "Searching…" filler first — never the ending.
   while (events.length > 18) {
-    const filler = events.findIndex(event => event.text.startsWith('Searching Alibaba.com'));
+    const filler = events.findIndex(event => event.text.startsWith('Searching AliExpress'));
     if (filler >= 0) events.splice(filler, 1);
     else events.splice(Math.floor(events.length / 2), 1);
   }
@@ -411,7 +478,7 @@ export async function createPlan(text) {
   if (failedAgents.length) {
     risks.unshift(`Live search failed for ${failedAgents.join(', ')} — those categories need manual sourcing.`);
   }
-  if (revised) {
+  if (revised || upgraded) {
     // Risks written for the first draft can contain a now-stale remaining
     // budget. Keep the final report internally consistent after revision.
     risks = risks.filter(risk => !/[£$€]\s?[\d,.]+/.test(risk));
@@ -432,6 +499,7 @@ export async function createPlan(text) {
     assumptions: (raw.assumptions || []).map(String).slice(0, 5),
     landed_cost: cost,
     revised,
+    upgraded,
     comparison
   };
 }

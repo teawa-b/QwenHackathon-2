@@ -250,7 +250,7 @@ export function showConnect(app, prefillCode) {
       <div class="c-card results-card">
         <p class="c-label">Launch plan ready</p>
         <h2>${money(cost.total || 0)} <em>of ${money(cost.budget || plan.budget_gbp || 0)}</em></h2>
-        <p class="c-muted">${plan.items.length} items · ${liveCount} live Alibaba listing${liveCount === 1 ? '' : 's'} · ${cost.valid ? 'inside budget' : 'over budget'}</p>
+        <p class="c-muted">${plan.items.length} items · ${liveCount} live listing${liveCount === 1 ? '' : 's'} · ${cost.valid ? 'inside budget' : 'over budget'}</p>
         ${state.data.image ? `<figure class="results-visual"><img src="${esc(state.data.image)}" alt="AI concept visual of the finished business"></figure>` : ''}
         ${cmp ? `<div class="results-compare">
           <div><div><span>SINGLE AGENT (CONTROL)</span><b>${cmp.single ? `${cmp.single.verified_links} live links` : 'Run failed'}</b></div><p>${cmp.single ? `${money(cmp.single.landed_total)} · ${cmp.single.budget_valid ? 'inside budget' : 'over budget'} · ${cmp.single.seconds}s` : 'No usable package'}</p></div>

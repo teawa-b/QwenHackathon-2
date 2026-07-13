@@ -119,6 +119,12 @@ const api = {
 
 function modeLabel() { return api.live ? 'Live · Qwen Cloud' : 'Demo catalogue'; }
 
+function marketplaceLabel(url) {
+  try {
+    return /(^|\.)aliexpress\.com$/i.test(new URL(url).hostname) ? 'ALIEXPRESS.COM' : 'ALIBABA.COM';
+  } catch { return 'LIVE LISTING'; }
+}
+
 function applyPlan(plan) {
   state.plan = plan;
   state.budget = plan.budget_gbp;
@@ -226,7 +232,7 @@ function workspaceView() {
         </section>
         <aside class="brief-panel">
           <div class="panel-title"><span>VALIDATED BRIEF</span><b>LOCKED</b></div>
-          <dl><div><dt>Business</dt><dd>${s.type}</dd></div><div><dt>Location</dt><dd>${state.city}, UK</dd></div><div><dt>Team</dt><dd>${state.team} people</dd></div><div><dt>Budget</dt><dd>${money(state.budget)}</dd></div><div><dt>Scope</dt><dd>Equipment only</dd></div><div><dt>Marketplace</dt><dd>Alibaba.com</dd></div></dl>
+          <dl><div><dt>Business</dt><dd>${s.type}</dd></div><div><dt>Location</dt><dd>${state.city}, UK</dd></div><div><dt>Team</dt><dd>${state.team} people</dd></div><div><dt>Budget</dt><dd>${money(state.budget)}</dd></div><div><dt>Scope</dt><dd>Equipment only</dd></div><div><dt>Marketplace</dt><dd>AliExpress</dd></div></dl>
           <div class="guardrail"><b>HUMAN APPROVAL</b><span>Required before supplier contact or purchase</span></div>
         </aside>
       </section>
@@ -261,7 +267,7 @@ function resultsView() {
       </section>` : '';
   const insight = plan
     ? `${measuredCompare}<section class="evaluation">
-        <div><span class="label">QWEN SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2><p>Generated live by Qwen Cloud${plan.revised ? ' — the critic caught an over-budget package and revised it before approval.' : '.'}</p></div>
+        <div><span class="label">QWEN SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2><p>Generated live by Qwen Cloud${plan.revised ? ' — the critic caught an over-budget package and revised it before approval.' : plan.upgraded ? ' — the critic caught an underspent package and upgraded it to use your budget properly.' : '.'}</p></div>
         <div class="findings">
           <div><span>RISKS</span><ul>${plan.risks.map(r => `<li>${r}</li>`).join('') || '<li>No blocking risks recorded.</li>'}</ul></div>
           <div><span>ASSUMPTIONS</span><ul>${plan.assumptions.map(a => `<li>${a}</li>`).join('') || '<li>No assumptions recorded.</li>'}</ul></div>
@@ -284,18 +290,18 @@ function resultsView() {
     <section class="result-grid">
       <div class="package-card">
         <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div><button data-restart>New brief</button></div>
-        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[5] ? `<a href="${item[5]}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a>` : item[0]}</h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span>${item[5] ? '<span class="tag-link">ALIBABA.COM</span>' : ''}</div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[5] ? `<a href="${item[5]}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a>` : item[0]}</h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span>${item[5] ? `<span class="tag-link">${marketplaceLabel(item[5])}</span>` : ''}</div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
       </div>
       <aside class="cost-card">
         <span class="label">LANDED COST ESTIMATE</span><div class="total"><small>Package total</small><strong>${money(total)}</strong><span>of ${money(state.budget)}</span></div>
         <div class="budget-meter"><i style="width:${Math.min(100, total / state.budget * 100)}%"></i></div>
         <div class="remaining"><span>Budget ${overBudget ? 'exceeded by' : 'remaining'}</span><b>${money(Math.abs(remaining))}</b></div>
         <dl><div><dt>Products</dt><dd>${money(subtotal)}</dd></div><div><dt>Shipping estimate</dt><dd>${money(finalShipping)}</dd></div><div><dt>VAT & duties estimate</dt><dd>${money(finalTax)}</dd></div><div><dt>Contingency</dt><dd>${money(finalContingency)}</dd></div></dl>
-        <p class="estimate-note">${plan ? 'Linked items point to real Alibaba.com listings found by Qwen live web search; unlinked lines are labelled estimates. Confirm prices and MOQ on the listing before purchasing.' : 'Estimates are indicative, not supplier quotations. Demo catalogue data is clearly separated from live marketplace data.'}</p>
+        <p class="estimate-note">${plan ? 'Linked items point to real AliExpress / Alibaba listings found by Qwen live web search; unlinked lines are labelled estimates. Confirm prices and MOQ on the listing before purchasing.' : 'Estimates are indicative, not supplier quotations. Demo catalogue data is clearly separated from live marketplace data.'}</p>
       </aside>
     </section>
     ${insight}
-    <section class="result-actions"><button class="secondary" onclick="window.print()">Print report</button><button class="primary" data-restart><span>Start another plan</span><b>↗</b></button></section>
+    <section class="result-actions">${plan ? '<button class="primary" data-download-pdf><span>Download PDF report</span><b>↓</b></button>' : ''}<button class="secondary" onclick="window.print()">Print report</button><button class="${plan ? 'secondary' : 'primary'}" data-restart><span>Start another plan</span><b>↗</b></button></section>
   </main>`;
 }
 
@@ -451,7 +457,7 @@ async function recordingToWav(blob) {
 function showAbout() {
   const dialog = document.createElement('dialog');
   dialog.className = 'about-dialog';
-  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division: each specialist agent runs its own Qwen call with live web search against Alibaba.com, real listing links are verified against the search results, a deterministic calculator handles landed costs, and a Critic agent revises over-budget packages.</p><p>Without a Qwen Cloud key the app falls back to a transparent demo catalogue — nothing is ever simulated as live.</p>`;
+  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division: each specialist agent runs its own Qwen call with live web search against AliExpress, real listing links are verified against the search results, a deterministic calculator handles landed costs, and a Critic agent revises over-budget packages and upgrades underspent ones.</p><p>Without a Qwen Cloud key the app falls back to a transparent demo catalogue — nothing is ever simulated as live.</p>`;
   document.body.append(dialog); dialog.showModal();
   dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
 }
@@ -478,6 +484,29 @@ function showResults() {
   document.querySelectorAll('[data-restart]').forEach(b => b.addEventListener('click', showBrief));
   document.querySelector('[data-about]').addEventListener('click', showAbout);
   document.querySelector('[data-generate-image]')?.addEventListener('click', generateConceptImage);
+  document.querySelector('[data-download-pdf]')?.addEventListener('click', downloadReport);
+}
+
+async function downloadReport(event) {
+  const button = event.currentTarget;
+  if (!state.plan || button.disabled) return;
+  button.disabled = true;
+  const label = button.querySelector('span');
+  const original = label?.textContent;
+  if (label) label.textContent = 'Preparing PDF…';
+  try {
+    const { downloadPlanPdf } = await import('./pdf.js');
+    await downloadPlanPdf(
+      state.plan,
+      { type: state.scenario.type, city: state.city, budget: state.budget, team: state.team },
+      state.conceptImage
+    );
+    if (label) label.textContent = original;
+  } catch {
+    if (label) label.textContent = 'PDF failed — try again';
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function generateConceptImage(event) {
@@ -541,7 +570,7 @@ async function playTimeline(events) {
 const PLANNING_LINES = [
   'Qwen Coordinator is analysing your brief…',
   'Designing your specialist agent team…',
-  'Specialists are searching Alibaba.com live for real listings…',
+  'Specialists are searching AliExpress live for real listings…',
   'Verifying listing links, prices and suppliers…',
   'Fitting the package inside your budget envelope…',
   'Running critic review on the draft package…'

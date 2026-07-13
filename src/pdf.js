@@ -1,5 +1,5 @@
 // Branded A4 PDF report for the companion screen: full package breakdown,
-// live Alibaba listing links, landed-cost maths, the measured single-agent
+// live AliExpress/Alibaba listing links, landed-cost maths, the measured single-agent
 // comparison, risks/assumptions and the Qwen concept image.
 
 const money = value =>
@@ -49,7 +49,7 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
   doc.setFontSize(11).setTextColor(220, 231, 221);
   doc.text('AGENT SOCIETY LAUNCH PLAN', M, 62);
   doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(141, 153, 146);
-  doc.text(`Generated ${new Date().toLocaleString('en-GB')} · Qwen Cloud live web search · alibaba.com`, M, 78);
+  doc.text(`Generated ${new Date().toLocaleString('en-GB')} · Qwen Cloud live web search · aliexpress.com`, M, 78);
   y = 120;
 
   // ---- Brief ----
@@ -95,7 +95,7 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
     rowY += metaLines.length * 11;
     if (url) {
       doc.setTextColor(30, 90, 200);
-      doc.textWithLink('View live Alibaba listing', M + 20, rowY, { url });
+      doc.textWithLink(/(^|\.)aliexpress\.com$/i.test(new URL(url).hostname) ? 'View live AliExpress listing' : 'View live Alibaba listing', M + 20, rowY, { url });
       rowY += 12;
     }
     y = rowY + 10;
@@ -178,7 +178,7 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p);
     doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(150, 158, 152);
-    doc.text('Linked items point to real Alibaba.com listings found by Qwen live web search; unlinked lines are labelled estimates. Prices are model readings, not quotations — confirm price and MOQ on the listing. No purchases were made.', M, H - 30, { maxWidth: W - M * 2 });
+    doc.text('Linked items point to real AliExpress / Alibaba listings found by Qwen live web search; unlinked lines are labelled estimates. Prices are model readings, not quotations — confirm price and MOQ on the listing. No purchases were made.', M, H - 30, { maxWidth: W - M * 2 });
     doc.text(`${p} / ${pages}`, W - M, H - 18, { align: 'right' });
   }
 
