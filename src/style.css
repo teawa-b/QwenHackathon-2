@@ -202,6 +202,10 @@ button{cursor:pointer}
 .single b{color:var(--orange)}
 .multi{border-color:rgba(184,246,50,.3);background:rgba(184,246,50,.06)}
 .multi b{color:var(--lime)}
+.single-package{grid-column:1/-1;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:4px 22px;margin-top:4px}
+.single-package summary{cursor:pointer;font-size:12px;font-weight:600;letter-spacing:.05em;color:var(--muted);padding:15px 0}
+.single-package summary:hover{color:var(--paper)}
+.single-package .items{padding-bottom:14px}
 .findings{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .findings>div{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:22px}
 .findings span{font-size:10px;letter-spacing:.09em;color:var(--lime);font-weight:600}

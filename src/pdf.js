@@ -95,7 +95,7 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
     rowY += metaLines.length * 11;
     if (url) {
       doc.setTextColor(30, 90, 200);
-      doc.textWithLink('View live Alibaba listing', M + 20, rowY, { url });
+      doc.textWithLink(/(^|\.)aliexpress\.com$/i.test(new URL(url).hostname) ? 'View live AliExpress listing' : 'View live Alibaba listing', M + 20, rowY, { url });
       rowY += 12;
     }
     y = rowY + 10;
@@ -154,6 +154,29 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
       doc.setFont('helvetica', 'italic').setFontSize(8.5).setTextColor(...MID);
       doc.text(`Parallel sourcing was ${cmp.parallel_speedup}x faster than running the specialists sequentially.`, M, y);
       y += 18;
+    }
+    if (cmp.single_items?.length) {
+      sectionTitle("SINGLE AGENT'S PACKAGE (FOR REFERENCE)");
+      for (let i = 0; i < cmp.single_items.length; i++) {
+        const [title, detail, price, priority, evidence, url, supplier] = cmp.single_items[i];
+        const meta = [detail, supplier, `${priority} · ${evidence}`].filter(Boolean).join('  ·  ');
+        const metaLines = doc.setFont('helvetica', 'normal').setFontSize(8).splitTextToSize(meta, W - M * 2 - 110);
+        ensureRoom(13 + metaLines.length * 10 + (url ? 11 : 0));
+        doc.setFont('helvetica', 'bold').setFontSize(9.5).setTextColor(...DARK);
+        doc.text(String(title).slice(0, 70), M, y);
+        doc.text(money(price), W - M, y, { align: 'right' });
+        y += 12;
+        doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...MID);
+        doc.text(metaLines, M, y);
+        y += metaLines.length * 10;
+        if (url) {
+          doc.setTextColor(30, 90, 200);
+          doc.textWithLink('View listing', M, y, { url });
+          y += 11;
+        }
+        y += 5;
+      }
+      y += 6;
     }
   }
 
