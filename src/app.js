@@ -125,6 +125,12 @@ function marketplaceLabel(url) {
   } catch { return 'LIVE LISTING'; }
 }
 
+// Every product line links out: to the verified live listing when one
+// survived verification, otherwise to a live Alibaba search for the product.
+const alibabaSearchUrl = query => `https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent(query)}`;
+const itemUrl = item => item[5] || alibabaSearchUrl(item[0]);
+const itemLinkTag = item => item[5] ? marketplaceLabel(item[5]) : 'SEARCH ALIBABA';
+
 function applyPlan(plan) {
   state.plan = plan;
   state.budget = plan.budget_gbp;
@@ -150,6 +156,14 @@ function header() {
 function briefView() {
   return `${header()}
   <main class="landing">
+    <div class="landing-bg" aria-hidden="true">
+      <svg class="lbg lbg-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="10" rx="3"/><circle cx="9.5" cy="12.5" r="1"/><circle cx="14.5" cy="12.5" r="1"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1"/><path d="M9 15.5h6"/></svg>
+      <svg class="lbg lbg-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5"/><path d="M12 12v9"/></svg>
+      <svg class="lbg lbg-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-3l-2.5-2h-3L8 16H5a2 2 0 01-2-2v-4z"/><circle cx="8" cy="12" r="1.2"/><circle cx="16" cy="12" r="1.2"/></svg>
+      <svg class="lbg lbg-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 3.4l7.5 7.5a2 2 0 010 2.8l-6.4 6.4a2 2 0 01-2.8 0l-7.5-7.5V5.4a2 2 0 012-2h7.2z"/><circle cx="8.5" cy="8.5" r="1.4"/></svg>
+      <svg class="lbg lbg-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M9 9h6M9 12.5h6M9 16h3.5"/></svg>
+      <svg class="lbg lbg-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.3 4 5.2 4 8.5s-1.4 6.2-4 8.5c-2.6-2.3-4-5.2-4-8.5s1.4-6.2 4-8.5z"/></svg>
+    </div>
     <div class="landing-head">
       <div class="eyebrow"><span>SUPPLYSWARM</span> A procurement department, formed on demand</div>
       <h1>Say what you want to build.<br><strong>A swarm sources it.</strong></h1>
@@ -256,7 +270,7 @@ function resultsView() {
         </div>
         ${cmp.single_items?.length ? `<details class="single-package">
           <summary>View the single agent's full package (${cmp.single_items.length} items)</summary>
-          <div class="items">${cmp.single_items.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[5] ? `<a href="${item[5]}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a>` : item[0]}</h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span>${item[5] ? `<span class="tag-link">${marketplaceLabel(item[5])}</span>` : ''}</div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+          <div class="items">${cmp.single_items.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3><a href="${itemUrl(item)}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a></h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span><span class="tag-link">${itemLinkTag(item)}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
         </details>` : ''}
       </section>` : '';
   const insight = plan
@@ -284,7 +298,7 @@ function resultsView() {
     <section class="result-grid">
       <div class="package-card">
         <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div><button data-restart>New brief</button></div>
-        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[5] ? `<a href="${item[5]}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a>` : item[0]}</h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span>${item[5] ? `<span class="tag-link">${marketplaceLabel(item[5])}</span>` : ''}</div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3><a href="${itemUrl(item)}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a></h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span><span class="tag-link">${itemLinkTag(item)}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
       </div>
       <aside class="cost-card">
         <span class="label">LANDED COST ESTIMATE</span><div class="total"><small>Package total</small><strong>${money(total)}</strong><span>of ${money(state.budget)}</span></div>
@@ -567,7 +581,7 @@ function startPlanningTicker() {
 
 async function runSwarm(text) {
   if (state.running) return; state.running = true;
-  state.plan = null; state.conceptImage = null;
+  state.plan = null; state.conceptImage = null; state.imagePromise = null;
   app.innerHTML = workspaceView(); window.scrollTo(0, 0);
   document.querySelector('[data-about]').addEventListener('click', showAbout);
   if (api.live && text) {
@@ -593,7 +607,7 @@ async function runSwarm(text) {
 
 async function runSwarm3D() {
   if (state.running) return;
-  state.plan = null; state.conceptImage = null;
+  state.plan = null; state.conceptImage = null; state.imagePromise = null;
   app.innerHTML = `${header()}
     <main class="xr-shell">
       <div class="xr-canvas" id="xr-canvas"></div>
@@ -664,10 +678,19 @@ async function runSwarm3D() {
     brief: null,
     phaseNames: PHASE_NAMES,
     money,
-    onComplete: () => {
-      live.send({ type: 'status', status: { text: 'Launch plan ready', phase: 'COMPLETE', progress: 100 } });
+    onComplete: async () => {
+      // Everything in the report — including the concept visual — must exist
+      // before we tell the user their plan is ready.
       const btn = document.querySelector('#xr-results');
-      if (btn) { btn.hidden = false; }
+      if (btn && state.imagePromise && !state.conceptImage) {
+        btn.hidden = false;
+        btn.disabled = true;
+        btn.textContent = 'Rendering concept visual…';
+        live.send({ type: 'status', status: { text: 'Rendering your concept visual…', phase: 'DESIGN PASS', progress: 99 } });
+        await Promise.race([state.imagePromise, wait(60000)]);
+      }
+      live.send({ type: 'status', status: { text: 'Launch plan ready', phase: 'COMPLETE', progress: 100 } });
+      if (btn) { btn.hidden = false; btn.disabled = false; btn.textContent = 'View launch plan ↗'; }
     },
     onExit: null
   });
@@ -740,10 +763,11 @@ async function runSwarm3D() {
           status: { text: 'Specialists reporting in…', phase: 'RUNNING', progress: 8 }
         });
         live.send({ type: 'plan', plan });
-        // Concept image for the companion's PDF report (and the results page).
-        api.image({ business: plan.business_type, city: state.city, items: state.scenario.items.map(item => item[0]) })
-          .then(({ url }) => { state.conceptImage = url; live.send({ type: 'image', url }); })
-          .catch(() => {});
+        // Concept image for the PDF report and results page — started now so it
+        // is ready by the time the swarm finishes acting out the plan.
+        state.imagePromise = api.image({ business: plan.business_type, city: state.city, items: state.scenario.items.map(item => item[0]) })
+          .then(({ url }) => { state.conceptImage = url; live.send({ type: 'image', url }); return url; })
+          .catch(() => null);
         room.begin(state.scenario, plan.events, { type: state.scenario.type, budget: state.budget });
       } catch (err) {
         clearInterval(ticker);

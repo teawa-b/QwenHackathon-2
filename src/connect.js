@@ -10,6 +10,8 @@ const ACCENTS = ['#b8f632', '#55e6b1', '#ffb08a', '#7dd3fc', '#c4b5fd', '#f9a8d4
 const money = value =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(value);
 
+const aliSearch = query => `https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent(query)}`;
+
 const esc = value => String(value ?? '')
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
@@ -235,7 +237,7 @@ export function showConnect(app, prefillCode) {
       <div class="detail-head" style="--accent:${agentAccent(index)}"><b>${esc(agent[0])}</b><div><strong>${esc(agent[1])}</strong><span>${esc(agent[2] || '')}</span></div></div>
       ${thoughts.length ? `<div class="detail-block"><p class="c-label">Thinking</p><ul>${thoughts.map(thought => `<li>${esc(thought)}</li>`).join('')}</ul></div>` : ''}
       ${said.length ? `<div class="detail-block"><p class="c-label">Last said</p><ul>${said.map(event => `<li>“${esc(event[1])}”</li>`).join('')}</ul></div>` : '<p class="detail-live">No dialogue from this agent yet.</p>'}
-      ${lines.length ? `<div class="detail-block"><p class="c-label">SOURCED · ${money(spend)}</p><ul>${lines.map(item => `<li>${esc(item[0])} — ${money(item[2])}${item[5] ? ` · <a href="${esc(item[5])}" target="_blank" rel="noopener noreferrer">listing ↗</a>` : ''}</li>`).join('')}</ul></div>` : ''}`;
+      ${lines.length ? `<div class="detail-block"><p class="c-label">SOURCED · ${money(spend)}</p><ul>${lines.map(item => `<li>${esc(item[0])} — ${money(item[2])} · <a href="${esc(item[5] || aliSearch(item[0]))}" target="_blank" rel="noopener noreferrer">${item[5] ? 'listing' : 'search'} ↗</a></li>`).join('')}</ul></div>` : ''}`;
   }
 
   function updateResults() {
@@ -258,7 +260,7 @@ export function showConnect(app, prefillCode) {
         </div>` : ''}
         <div class="results-items">${plan.items.map(item => `
           <div class="r-item">
-            <b>${item[5] ? `<a href="${esc(item[5])}" target="_blank" rel="noopener noreferrer">${esc(item[0])}</a>` : esc(item[0])}</b>
+            <b><a href="${esc(item[5] || aliSearch(item[0]))}" target="_blank" rel="noopener noreferrer">${esc(item[0])}</a></b>
             <strong>${money(item[2])}</strong>
             <p>${esc(item[1])}${item[6] ? ` · ${esc(item[6])}` : ''}</p>
           </div>`).join('')}

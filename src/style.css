@@ -532,3 +532,17 @@ body.connect-mode .c-top{background:rgba(16,24,42,.82)}
 body.connect-mode #pair-form button,body.connect-mode .composer button,body.connect-mode .pdf-btn{background:#3454e4;color:#fff}
 body.connect-mode #pair-form button:hover,body.connect-mode .composer button:hover,body.connect-mode .pdf-btn:hover{background:#2843c0}
 body.connect-mode .c-toast{background:#e9edf6;color:#10182a}
+
+/* ---------- Landing background: oversized translucent glyphs ---------- */
+.landing{position:relative}
+.landing>*{position:relative;z-index:1}
+.landing-bg{position:absolute;inset:-40px 0 0;pointer-events:none;z-index:0;overflow:hidden}
+.lbg{position:absolute;color:var(--lime);opacity:.055;transform:rotate(var(--r,0deg));animation:lbgFloat 16s ease-in-out infinite}
+.lbg-1{width:220px;height:220px;top:4%;right:6%;--r:8deg;color:var(--lime)}
+.lbg-2{width:170px;height:170px;top:38%;right:16%;--r:-10deg;color:var(--amber);opacity:.07;animation-delay:-4s}
+.lbg-3{width:200px;height:200px;bottom:24%;left:-2%;--r:-7deg;color:var(--lime);animation-delay:-8s}
+.lbg-4{width:130px;height:130px;top:12%;left:34%;--r:14deg;color:var(--mint);opacity:.06;animation-delay:-2s}
+.lbg-5{width:150px;height:150px;bottom:6%;right:32%;--r:6deg;color:var(--mint);opacity:.05;animation-delay:-11s}
+.lbg-6{width:180px;height:180px;top:58%;left:14%;--r:0deg;color:var(--amber);opacity:.05;animation-delay:-6s}
+@keyframes lbgFloat{50%{transform:rotate(var(--r,0deg)) translateY(-16px)}}
+@media(max-width:680px){.lbg{display:none}.lbg-1,.lbg-3{display:block;width:150px;height:150px}}

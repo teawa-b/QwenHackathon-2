@@ -81,7 +81,7 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
     const titleLines = doc.setFont('helvetica', 'bold').setFontSize(10.5).splitTextToSize(String(title), W - M * 2 - 120);
     const metaLine = [detail, supplier, `${priority} · ${evidence}`].filter(Boolean).join('  ·  ');
     const metaLines = doc.setFont('helvetica', 'normal').setFontSize(8.5).splitTextToSize(metaLine, W - M * 2 - 120);
-    const rowHeight = 14 + titleLines.length * 13 + metaLines.length * 11 + (url ? 12 : 0);
+    const rowHeight = 14 + titleLines.length * 13 + metaLines.length * 11 + 12;
     ensureRoom(rowHeight);
     if (i % 2 === 0) { doc.setFillColor(245, 248, 244); doc.rect(M - 6, y - 10, W - M * 2 + 12, rowHeight, 'F'); }
     doc.setFont('helvetica', 'bold').setFontSize(10.5).setTextColor(...DARK);
@@ -93,11 +93,15 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
     doc.setFontSize(8.5);
     doc.text(metaLines, M + 20, rowY);
     rowY += metaLines.length * 11;
+    doc.setTextColor(30, 90, 200);
     if (url) {
-      doc.setTextColor(30, 90, 200);
       doc.textWithLink(/(^|\.)aliexpress\.com$/i.test(new URL(url).hostname) ? 'View live AliExpress listing' : 'View live Alibaba listing', M + 20, rowY, { url });
-      rowY += 12;
+    } else {
+      doc.textWithLink('Search this product on Alibaba.com', M + 20, rowY, {
+        url: `https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent(String(title || ''))}`
+      });
     }
+    rowY += 12;
     y = rowY + 10;
   }
 
@@ -201,7 +205,7 @@ export async function downloadPlanPdf(plan, brief, imageUrl) {
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p);
     doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(150, 158, 152);
-    doc.text('Linked items point to real Alibaba.com listings found by Qwen live web search; unlinked lines are labelled estimates. Prices are model readings, not quotations — confirm price and MOQ on the listing. No purchases were made.', M, H - 30, { maxWidth: W - M * 2 });
+    doc.text('Live-listing links point to real Alibaba.com pages found by Qwen live web search; other lines link to an Alibaba search for that product and are labelled estimates. Prices are model readings, not quotations — confirm price and MOQ on the listing. No purchases were made.', M, H - 30, { maxWidth: W - M * 2 });
     doc.text(`${p} / ${pages}`, W - M, H - 18, { align: 'right' });
   }
 
