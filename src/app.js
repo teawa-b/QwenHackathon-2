@@ -303,8 +303,35 @@ function resultsView() {
       </aside>
     </section>
     ${insight}
-    <section class="result-actions">${plan ? '<button class="primary" data-download-pdf><span>Download PDF report</span><b>↓</b></button>' : ''}<button class="secondary" onclick="window.print()">Print report</button><button class="${plan ? 'secondary' : 'primary'}" data-restart><span>Start another plan</span><b>↗</b></button></section>
+    <section class="result-actions"><button class="primary" data-download-pdf><span>Download PDF report</span><b>↓</b></button><button class="secondary" onclick="window.print()">Print report</button><button class="secondary" data-restart><span>Start another plan</span><b>↗</b></button></section>
   </main>`;
+}
+
+// Demo-catalogue plan payload for the PDF when no live plan exists — same
+// scaling maths as resultsView, honestly labelled as demo data.
+function buildDemoPlan() {
+  const s = state.scenario;
+  const rawProducts = s.items.reduce((n, item) => n + item[2], 0);
+  const rawShipping = Math.round(rawProducts * 0.075);
+  const rawTax = Math.round((rawProducts + rawShipping) * 0.08);
+  const rawContingency = Math.round(rawProducts * 0.05);
+  const rawTotal = rawProducts + rawShipping + rawTax + rawContingency;
+  const scale = rawTotal > state.budget ? (state.budget * .965) / rawTotal : 1;
+  const items = s.items.map(item => [item[0], item[1], Math.round(item[2] * scale), item[3], item[4], null, null, null]);
+  const products = items.reduce((n, item) => n + item[2], 0);
+  const shipping = Math.round(rawShipping * scale), tax = Math.round(rawTax * scale), contingency = Math.round(rawContingency * scale);
+  const total = products + shipping + tax + contingency;
+  return {
+    live: false,
+    business_type: s.type,
+    city: state.city,
+    team_size: state.team,
+    budget_gbp: state.budget,
+    items,
+    landed_cost: { products, shipping, tax, contingency, total, budget: state.budget, remaining: state.budget - total, valid: total <= state.budget },
+    risks: ['Demo catalogue prices are indicative samples, not live marketplace data.', 'Final landed costs change with shipping, VAT, duties and supplier pricing.'],
+    assumptions: ['Add a Qwen Cloud key for live Alibaba sourcing with verified listing links.']
+  };
 }
 
 function showBrief() {
@@ -472,7 +499,7 @@ function showResults() {
 
 async function downloadReport(event) {
   const button = event.currentTarget;
-  if (!state.plan || button.disabled) return;
+  if (button.disabled) return;
   button.disabled = true;
   const label = button.querySelector('span');
   const original = label?.textContent;
@@ -480,7 +507,7 @@ async function downloadReport(event) {
   try {
     const { downloadPlanPdf } = await import('./pdf.js');
     await downloadPlanPdf(
-      state.plan,
+      state.plan || buildDemoPlan(),
       { type: state.scenario.type, city: state.city, budget: state.budget, team: state.team },
       state.conceptImage
     );
