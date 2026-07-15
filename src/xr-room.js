@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { sfx } from './audio.js';
 
 const INK = 0x07110e, LIME = 0xb8f632, MINT = 0x55e6b1, ORANGE = 0xff6b35;
 const SHELL = 0x8c9b91, FACE = 0xdce7dd, TRIM = 0x33423c;
@@ -116,6 +117,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.xr.enabled = true;
+  // Sharpness in VR/AR: render at a higher framebuffer scale and disable fixed
+  // foveation, which otherwise blurs everything away from the lens centre.
+  renderer.xr.setFramebufferScaleFactor(1.2);
+  renderer.xr.setFoveation(0);
   container.appendChild(renderer.domElement);
   renderer.domElement.style.touchAction = 'none';
 
@@ -184,6 +189,8 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   board.position.set(0, 3.35, -4.3);
   board.rotation.x = 0.06;
   world.add(board);
+
+  sfx.startMusic();
 
   // Run state — nothing plays until begin() is called
   let specialists = [];
@@ -265,6 +272,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     if (raycaster.intersectObject(coordinator, true).length) {
       holding = true;
       controls.enabled = false;
+      sfx.play('hold', 0.55);
       callbacks.onHoldStart?.();
       e.preventDefault();
       return;
@@ -281,6 +289,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     if (!holding) return;
     holding = false;
     if (!renderer.xr.isPresenting) controls.enabled = true;
+    sfx.play('release', 0.5);
     callbacks.onHoldEnd?.();
   }
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -358,6 +367,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     if (arMode && !arPlaced) { placeWorldAtReticle(); return; }
     if (controllerHitsCoordinator(controller)) {
       controller.userData.holdingCoordinator = true;
+      sfx.play('hold', 0.55);
       callbacks.onHoldStart?.();
       return;
     }
@@ -373,6 +383,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     const controller = event.target;
     if (!controller.userData.holdingCoordinator) return;
     controller.userData.holdingCoordinator = false;
+    sfx.play('release', 0.5);
     callbacks.onHoldEnd?.();
   };
   const controllers = [0, 1].map(index => {
@@ -412,13 +423,9 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       });
       xrSession = session;
       session.addEventListener('end', onSessionEnd);
-      const gl = renderer.getContext();
-      session.updateRenderState({
-        baseLayer: new XRWebGLLayer(session, gl, {
-          framebufferScaleFactor: XRWebGLLayer.getNativeFramebufferScaleFactor(session),
-          antialias: true
-        })
-      });
+      // three.js creates its own base layer using the framebuffer scale factor
+      // configured above — setting one manually here would fight it and force
+      // the (blurrier) native default back on.
       renderer.xr.setReferenceSpaceType('local-floor');
       await renderer.xr.setSession(session);
       controls.enabled = false;
@@ -548,6 +555,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     s.nextThoughtAt = elapsed + 2 + s.offset * 4;
     s.bot.visible = true; s.label.visible = true;
     s.link.material.opacity = .3;
+    sfx.play('spawn', 0.5);
   }
 
   function showBubble(entity, text, elapsed, kind = 'speech', duration = EVENT_GAP + 0.8) {
@@ -628,7 +636,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
 
     if (i === events.length - 1) {
       finished = true;
+      sfx.play('complete', 0.65);
       setTimeout(() => { if (!xrSession) callbacks.onFinished?.(); }, 1500);
+    } else {
+      sfx.play('event', 0.3);
     }
     drawBoard();
     callbacks.onEvent?.({ who, to, text, progress: pct, phase: phaseLabel, index: i });
@@ -841,6 +852,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       drawBoard();
     },
     dispose() {
+      sfx.stopMusic();
       renderer.setAnimationLoop(null);
       if (hitTestSource) { hitTestSource.cancel?.(); hitTestSource = null; }
       if (xrSession) xrSession.end().catch(() => {});
