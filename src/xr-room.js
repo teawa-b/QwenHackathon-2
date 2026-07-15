@@ -2,22 +2,22 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { sfx } from './audio.js';
 
-const INK = 0x07110e, LIME = 0xb8f632, MINT = 0x55e6b1, ORANGE = 0xff6b35;
-const SHELL = 0x8c9b91, FACE = 0xdce7dd, TRIM = 0x33423c;
-const ACCENTS = [LIME, MINT, LIME, MINT, ORANGE, MINT, LIME];
+const INK = 0x0d1424, LIME = 0xe8a33d, MINT = 0x5c7cff, ORANGE = 0xff7a5c;
+const SHELL = 0x93a0b5, FACE = 0xe8ecf4, TRIM = 0x39445c;
+const ACCENTS = [MINT, 0x46c8b4, LIME, MINT, ORANGE, 0x46c8b4, LIME];
 
 function makeLabelSprite(code, name, accent) {
   const canvas = document.createElement('canvas');
   canvas.width = 512; canvas.height = 160;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(7,17,14,.82)';
+  ctx.fillStyle = 'rgba(13,20,36,.82)';
   ctx.fillRect(0, 0, 512, 160);
   ctx.strokeStyle = `#${accent.toString(16).padStart(6, '0')}`;
   ctx.globalAlpha = .55; ctx.lineWidth = 4; ctx.strokeRect(4, 4, 504, 152); ctx.globalAlpha = 1;
   ctx.fillStyle = `#${accent.toString(16).padStart(6, '0')}`;
   ctx.font = '700 64px sans-serif'; ctx.textAlign = 'center';
   ctx.fillText(code, 256, 74);
-  ctx.fillStyle = '#dce7dd'; ctx.font = '600 34px sans-serif';
+  ctx.fillStyle = '#e8ecf4'; ctx.font = '600 34px sans-serif';
   ctx.fillText(name.toUpperCase(), 256, 126);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -44,7 +44,7 @@ function makeBubbleSprite(text, accent, kind = 'speech') {
     }
   }
   const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
-  ctx.fillStyle = thought ? 'rgba(10,20,16,.84)' : 'rgba(7,17,14,.92)';
+  ctx.fillStyle = thought ? 'rgba(13,20,36,.84)' : 'rgba(13,20,36,.92)';
   ctx.beginPath(); ctx.roundRect(8, 8, 752, thought ? 186 : 216, thought ? 60 : 26); ctx.fill();
   ctx.strokeStyle = accentCss; ctx.globalAlpha = thought ? .45 : .8; ctx.lineWidth = thought ? 4 : 5;
   if (thought) ctx.setLineDash([16, 12]);
@@ -57,7 +57,7 @@ function makeBubbleSprite(text, accent, kind = 'speech') {
     }
   }
   ctx.globalAlpha = 1;
-  ctx.fillStyle = thought ? '#9fb3a6' : '#dce7dd';
+  ctx.fillStyle = thought ? '#9fb0c6' : '#e8ecf4';
   ctx.font = thought ? 'italic 500 36px sans-serif' : '600 40px sans-serif';
   ctx.textAlign = 'center';
   const boxHeight = thought ? 186 : 216;
@@ -141,17 +141,17 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   rig.add(camera);
   scene.add(rig);
 
-  scene.add(new THREE.HemisphereLight(0x27362e, 0x040a07, 1.4));
-  const key = new THREE.DirectionalLight(0xe8f5e0, 1.5);
+  scene.add(new THREE.HemisphereLight(0x2a3450, 0x05070f, 1.4));
+  const key = new THREE.DirectionalLight(0xe8ecf7, 1.5);
   key.position.set(3, 6, 4); scene.add(key);
   const hubLight = new THREE.PointLight(LIME, 8, 9); hubLight.position.set(0, 2.4, 0); world.add(hubLight);
 
   // Virtual floor — hidden in passthrough AR where the real room is the floor.
   const ground = new THREE.Group();
   world.add(ground);
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(15, 48), new THREE.MeshStandardMaterial({ color: 0x0a1410, roughness: .9 }));
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(15, 48), new THREE.MeshStandardMaterial({ color: 0x0a101f, roughness: .9 }));
   floor.rotation.x = -Math.PI / 2; ground.add(floor);
-  const grid = new THREE.GridHelper(30, 34, 0x1d2c24, 0x101c16);
+  const grid = new THREE.GridHelper(30, 34, 0x232f4a, 0x141c30);
   grid.position.y = 0.005; ground.add(grid);
   for (const [radius, opacity] of [[2.9, .5], [0.85, .8]]) {
     const ring = new THREE.Mesh(
@@ -207,45 +207,45 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   function drawBoard() {
     const ctx = boardCtx;
     ctx.clearRect(0, 0, 1024, 576);
-    ctx.fillStyle = 'rgba(6,14,11,.94)'; ctx.fillRect(0, 0, 1024, 576);
-    ctx.strokeStyle = 'rgba(184,246,50,.5)'; ctx.lineWidth = 3; ctx.strokeRect(6, 6, 1012, 564);
+    ctx.fillStyle = 'rgba(13,20,36,.94)'; ctx.fillRect(0, 0, 1024, 576);
+    ctx.strokeStyle = 'rgba(232,163,61,.5)'; ctx.lineWidth = 3; ctx.strokeRect(6, 6, 1012, 564);
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#b8f632'; ctx.font = '700 30px sans-serif';
+    ctx.fillStyle = '#e8a33d'; ctx.font = '700 30px sans-serif';
     ctx.fillText(timelineStart >= 0 ? 'SWARM OPERATIONS · LIVE' : 'SUPPLYSWARM OPS ROOM', 40, 62);
-    ctx.fillStyle = '#8d9992'; ctx.font = '600 24px sans-serif';
+    ctx.fillStyle = '#8d97ad'; ctx.font = '600 24px sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(briefLine, 984, 62);
     ctx.textAlign = 'left';
-    ctx.strokeStyle = 'rgba(238,240,232,.16)'; ctx.beginPath(); ctx.moveTo(40, 86); ctx.lineTo(984, 86); ctx.stroke();
+    ctx.strokeStyle = 'rgba(232,236,244,.16)'; ctx.beginPath(); ctx.moveTo(40, 86); ctx.lineTo(984, 86); ctx.stroke();
     if (timelineStart < 0) {
       // Idle: invite the user to talk to the coordinator
       ctx.textAlign = 'center';
-      ctx.fillStyle = listening ? '#55e6b1' : '#eef0e8';
+      ctx.fillStyle = listening ? '#5ad4c2' : '#e8ecf4';
       ctx.font = '700 52px sans-serif';
       ctx.fillText(listening ? '● LISTENING…' : 'TALK TO ME', 512, 268);
-      ctx.fillStyle = '#8d9992'; ctx.font = '500 27px sans-serif';
+      ctx.fillStyle = '#8d97ad'; ctx.font = '500 27px sans-serif';
       const lines = statusText.length > 52
         ? [statusText.slice(0, statusText.lastIndexOf(' ', 52)), statusText.slice(statusText.lastIndexOf(' ', 52) + 1)]
         : [statusText];
       lines.forEach((line, i) => ctx.fillText(line, 512, 330 + i * 38));
-      ctx.fillStyle = '#5f6c64'; ctx.font = '600 20px sans-serif';
+      ctx.fillStyle = '#626d84'; ctx.font = '600 20px sans-serif';
       ctx.fillText('TELL ME YOUR BUSINESS, BUDGET AND LOCATION', 512, 500);
       ctx.textAlign = 'left';
     } else {
       let y = 136;
       for (const row of rows.slice(-6)) {
-        ctx.fillStyle = row.warning ? '#ff966e' : '#55e6b1';
+        ctx.fillStyle = row.warning ? '#ff966e' : '#5ad4c2';
         ctx.font = '700 22px sans-serif';
         const speaker = `${row.who}${row.to ? ` → ${row.to}` : ''}`.toUpperCase();
         ctx.fillText(speaker.length > 22 ? speaker.slice(0, 21) + '…' : speaker, 40, y);
-        ctx.fillStyle = '#c8d2ca'; ctx.font = '400 24px sans-serif';
+        ctx.fillStyle = '#aab3c6'; ctx.font = '400 24px sans-serif';
         ctx.fillText(row.text.length > 56 ? row.text.slice(0, 55) + '…' : row.text, 330, y);
         y += 56;
       }
-      ctx.fillStyle = finished ? '#b8f632' : '#eef0e8'; ctx.font = '700 30px sans-serif';
+      ctx.fillStyle = finished ? '#e8a33d' : '#e8ecf4'; ctx.font = '700 30px sans-serif';
       ctx.fillText(finished ? 'PACKAGE APPROVED — YOUR LAUNCH PLAN IS READY' : phaseLabel, 40, 514);
-      ctx.fillStyle = 'rgba(184,246,50,.18)'; ctx.fillRect(40, 532, 944, 12);
-      ctx.fillStyle = '#b8f632'; ctx.fillRect(40, 532, 944 * progress / 100, 12);
+      ctx.fillStyle = 'rgba(232,163,61,.18)'; ctx.fillRect(40, 532, 944, 12);
+      ctx.fillStyle = '#e8a33d'; ctx.fillRect(40, 532, 944 * progress / 100, 12);
     }
     boardTexture.needsUpdate = true;
   }

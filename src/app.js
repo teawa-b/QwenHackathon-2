@@ -149,45 +149,35 @@ function header() {
 
 function briefView() {
   return `${header()}
-  <main class="brief-shell">
-    <section class="hero-copy">
-      <div class="eyebrow"><span>01</span> Procurement, assembled</div>
-      <h1>Build the business.<br><strong>We’ll source the rest.</strong></h1>
-      <p>Describe your idea. A society of specialist agents will turn it into an evidence-led equipment and supplier plan—without crossing your budget.</p>
-    </section>
-    <section class="command-card">
-      <div class="robot-stage" aria-hidden="true">
-        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
-        <div class="bot-shadow"></div>
-        <div class="bot">
-          <div class="antenna"><span></span></div><div class="ear left"></div><div class="ear right"></div>
-          <div class="face"><b></b><b></b><div class="mouth"></div></div>
-          <div class="body"><span class="core"></span></div>
-        </div>
-        <div class="signal signal-a">£</div><div class="signal signal-b">✓</div><div class="signal signal-c">⌁</div>
-      </div>
-      <div class="prompt-area">
-        <div class="prompt-label"><span class="live-dot"></span> Coordinator online</div>
-        <label for="idea">What business are you building?</label>
-        <div class="input-wrap">
-          <textarea id="idea" rows="3" maxlength="280" placeholder="Tell us what you're building, where, your budget, and roughly how many people it needs to support."></textarea>
-          <button class="voice" type="button" data-voice aria-label="${api.live ? 'Speak your business brief' : 'Voice input unavailable in demo mode'}" title="${api.live ? 'Speak your brief — transcribed by Qwen ASR' : 'Voice input activates when Qwen Cloud is connected'}">⌁</button>
-        </div>
-        <div class="examples" aria-label="Example briefs">
-          <button data-example="studio">Game studio · £10k</button>
-          <button data-example="gym">Small gym · £15k</button>
-          <button data-example="podcast">Podcast room · £5k</button>
-        </div>
-        <button class="assemble" data-start><span>Assemble my swarm</span><b>↗</b></button>
-        <button class="assemble xr-launch" data-start-3d><span>Enter the 3D ops room · VR</span><b>◈</b></button>
-        <p class="fineprint">No purchases or supplier messages are sent. Every consequential action requires your approval.</p>
-        <a class="pair-link" href="/connect">Have a session code from a VR headset? <b>Pair this device →</b></a>
-      </div>
-    </section>
-    <section class="proof-strip">
-      <div><b>06</b><span>Specialist agents</span></div><div><b>01</b><span>Shared budget</span></div><div><b>100%</b><span>Evidence labelled</span></div>
-      <p>Powered by <strong>Qwen Cloud</strong><br><span data-live-copy>${api.live ? 'Live planning · Qwen speech recognition' : 'Demo catalogue · add a Qwen key for live voice'}</span></p>
-    </section>
+  <main class="landing">
+    <div class="landing-head">
+      <div class="eyebrow"><span>SUPPLYSWARM</span> A procurement department, formed on demand</div>
+      <h1>Say what you want to build.<br><strong>A swarm sources it.</strong></h1>
+      <p class="landing-desc">SupplySwarm turns a spoken business idea into a complete equipment plan. Describe your business and budget to the coordinator robot in VR; it assembles a team of specialist AI agents that search Alibaba live, price the package realistically, check it against your budget with real shipping and tax maths, and hand you a finished launch plan — with a concept image of your future space, verified product links for every item, and a PDF you can keep.</p>
+      <ul class="steps">
+        <li><b>1</b> Speak your brief in VR</li>
+        <li><b>2</b> Specialist agents search &amp; price</li>
+        <li><b>3</b> Critic checks the budget</li>
+        <li><b>4</b> PDF plan on your phone</li>
+      </ul>
+    </div>
+    <div class="doors">
+      <section class="door door-vr">
+        <div class="door-tag">HEADSET / DESKTOP</div>
+        <h2>Use in VR</h2>
+        <p>Enter the 3D operations room. Hold the coordinator robot, speak your business brief, and watch the specialist swarm assemble around you. Works in passthrough AR too.</p>
+        <button class="assemble" data-start-3d><span>USE IN VR</span><b>◈</b></button>
+        <em>Also works on desktop — drag to orbit, hold the robot to talk, tap any robot to inspect it.</em>
+      </section>
+      <section class="door door-mobile">
+        <div class="door-tag">PHONE</div>
+        <h2>Join session on mobile</h2>
+        <p>Enter the code shown inside the VR room. Follow the swarm live, message any agent from your phone, and receive the finished plan as a PDF.</p>
+        <a class="assemble mobile-join" href="/connect"><span>JOIN SESSION ON MOBILE</span><b>↗</b></a>
+        <em>Live agent feed, concept image, verified Alibaba links, downloadable PDF.</em>
+      </section>
+    </div>
+    <p class="fineprint landing-fine">No purchases or supplier messages are ever sent. Every consequential action requires your approval. <span data-live-copy>${api.live ? 'Live planning · Qwen Cloud connected.' : 'Running on the demo catalogue.'}</span></p>
   </main>`;
 }
 
@@ -314,29 +304,10 @@ function showBrief() {
 }
 
 function bindBrief() {
-  document.querySelectorAll('[data-example]').forEach(btn => btn.addEventListener('click', () => {
-    const copy = { studio: 'I want to start a four-person game development studio in Coventry with a £10,000 equipment budget for PC and VR games.', gym: 'I want to open a small training gym in Birmingham with a £15,000 equipment budget.', podcast: 'I need a four-person podcast production room in Manchester with a £5,000 equipment budget.' };
-    document.querySelector('#idea').value = copy[btn.dataset.example];
-  }));
-  document.querySelector('[data-start]').addEventListener('click', () => {
-    const idea = document.querySelector('#idea');
-    const text = idea.value.trim();
-    if (!text) {
-      idea.setCustomValidity('Describe your business first, or choose an example brief.');
-      idea.reportValidity();
-      idea.focus();
-      return;
-    }
-    idea.setCustomValidity('');
-    parseBrief(text);
-    runSwarm(text);
-  });
-  // The 3D room always opens idle. A landing-page example must never start or
-  // prefill the room: the user talks to the coordinator (or types) from there.
+  // The landing offers exactly two doors. The 3D room always opens idle — the
+  // user talks to the coordinator (or types) from there; phones pair at /connect.
   document.querySelector('[data-start-3d]').addEventListener('click', () => runSwarm3D());
-  document.querySelector('#idea').addEventListener('input', event => event.currentTarget.setCustomValidity(''));
   document.querySelector('[data-about]').addEventListener('click', showAbout);
-  bindVoice();
 }
 
 function createVoiceRecorder() {
