@@ -547,3 +547,18 @@ body.connect-mode .c-toast{background:#e9edf6;color:#10182a}
 .lbg-6{width:180px;height:180px;top:58%;left:14%;--r:0deg;color:var(--amber);opacity:.05;animation-delay:-6s}
 @keyframes lbgFloat{50%{transform:rotate(var(--r,0deg)) translateY(-16px)}}
 @media(max-width:680px){.lbg{display:none}.lbg-1,.lbg-3{display:block;width:150px;height:150px}}
+
+/* ---------- Recent swarms (cached on-device) ---------- */
+.linklike{background:none;border:0;color:var(--faint);font-size:12px;font-weight:600;padding:0}
+.linklike:hover{color:var(--paper)}
+.recents{margin-top:clamp(34px,5vw,54px)}
+.recents-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px}
+.recents-head h2{font:600 clamp(22px,2.4vw,30px)/1 var(--display);margin:0}
+.recent-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.recent-card{display:grid;grid-template-columns:64px 1fr auto;gap:14px;align-items:center;text-align:left;background:var(--surface);border:0;border-radius:var(--r-md);padding:12px;box-shadow:0 6px 18px rgba(28,36,48,.07);transition:.18s;font-family:var(--body)}
+.recent-card:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(28,36,48,.12)}
+.recent-card img,.recent-thumb{width:64px;height:52px;border-radius:10px;object-fit:cover;display:grid;place-items:center;background:var(--accent-tint,#e9edfd);color:var(--lime);font-size:18px}
+.recent-info strong{display:block;font:600 15px var(--display);color:var(--paper)}
+.recent-info em{display:block;font-style:normal;font-size:11px;color:var(--faint);margin-top:4px}
+.recent-card>b{color:var(--lime);font-size:16px;padding-right:6px}
+.recents .fineprint{margin-top:14px}

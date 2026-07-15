@@ -185,6 +185,7 @@ function briefView() {
         <em>Live agent feed, concept image, verified Alibaba links, downloadable PDF.</em>
       </section>
     </div>
+    ${recentsSection()}
     <p class="fineprint landing-fine">No purchases or supplier messages are ever sent. Every consequential action requires your approval. <span data-live-copy>${api.live ? 'Live planning · Qwen Cloud connected.' : 'Running on the demo catalogue.'}</span></p>
   </main>`;
 }
@@ -264,7 +265,7 @@ function resultsView() {
         </div>
         ${cmp.single_items?.length ? `<details class="single-package">
           <summary>View the single agent's full package (${cmp.single_items.length} items)</summary>
-          <div class="items">${cmp.single_items.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3><a href="${itemUrl(item)}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a></h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span><span class="tag-link">${itemLinkTag(item)}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+          <div class="items">${cmp.single_items.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3><a href="${itemUrl(item)}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a></h3><p>${item[8] > 1 ? `Qty ${item[8]} · ` : ''}${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span><span class="tag-link">${itemLinkTag(item)}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
         </details>` : ''}
       </section>` : '';
   const insight = plan
@@ -292,7 +293,7 @@ function resultsView() {
     <section class="result-grid">
       <div class="package-card">
         <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div><button data-restart>New brief</button></div>
-        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3><a href="${itemUrl(item)}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a></h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span><span class="tag-link">${itemLinkTag(item)}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3><a href="${itemUrl(item)}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a></h3><p>${item[8] > 1 ? `Qty ${item[8]} · ` : ''}${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span><span class="tag-link">${itemLinkTag(item)}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
       </div>
       <aside class="cost-card">
         <span class="label">LANDED COST ESTIMATE</span><div class="total"><small>Package total</small><strong>${money(total)}</strong><span>of ${money(state.budget)}</span></div>
@@ -307,6 +308,86 @@ function resultsView() {
   </main>`;
 }
 
+// ---------------------------------------------------------------------------
+// Recent swarms — finished runs cached on this device (localStorage) so the
+// user can reopen the final plan instantly instead of regenerating it.
+// ---------------------------------------------------------------------------
+
+const RECENTS_KEY = 'supplyswarm.recent';
+
+function loadRecents() {
+  try { return JSON.parse(localStorage.getItem(RECENTS_KEY)) || []; } catch { return []; }
+}
+
+function persistRecents(list) {
+  try { localStorage.setItem(RECENTS_KEY, JSON.stringify(list)); return true; } catch { return false; }
+}
+
+async function saveRecentSwarm() {
+  if (state.savedRunId) return; // this run is already cached
+  state.savedRunId = Date.now();
+  const s = state.scenario;
+  // Qwen image URLs expire within a day — cache the pixels, not the link.
+  let image = state.conceptImage || null;
+  if (image && !String(image).startsWith('data:')) {
+    try {
+      const response = await fetch(`/api/image-proxy?url=${encodeURIComponent(image)}`);
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size < 900_000) {
+          image = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(new Error('read failed'));
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch { /* keep the URL; better than nothing while it lasts */ }
+  }
+  const entry = {
+    id: state.savedRunId, ts: Date.now(),
+    plan: state.plan,
+    scenario: { type: s.type, team: s.team, agents: s.agents, items: s.items },
+    budget: state.budget, city: state.city, team: state.team,
+    image
+  };
+  let list = [entry, ...loadRecents().filter(other => other.id !== entry.id)].slice(0, 8);
+  if (!persistRecents(list)) {
+    // Storage quota hit — drop cached images, then oldest entries.
+    list = list.map(other => ({ ...other, image: other.image?.startsWith('data:') ? null : other.image }));
+    if (!persistRecents(list)) persistRecents(list.slice(0, 3));
+  }
+}
+
+function openRecent(id) {
+  const entry = loadRecents().find(other => other.id === id);
+  if (!entry) return;
+  state.plan = entry.plan || null;
+  state.scenario = entry.scenario;
+  state.budget = entry.budget;
+  state.city = entry.city;
+  state.team = entry.team;
+  state.conceptImage = entry.image || null;
+  state.savedRunId = entry.id; // reopening must not re-save a duplicate
+  showResults();
+}
+
+function recentsSection() {
+  const recents = loadRecents();
+  if (!recents.length) return '';
+  return `<section class="recents">
+    <div class="recents-head"><h2>Recent swarms</h2><button class="linklike" data-clear-recents>Clear all</button></div>
+    <div class="recent-list">${recents.map(entry => `
+      <button class="recent-card" data-recent="${entry.id}">
+        ${entry.image ? `<img src="${entry.image}" alt="">` : '<span class="recent-thumb" aria-hidden="true">◈</span>'}
+        <span class="recent-info"><strong>${entry.scenario?.type || 'Launch plan'}</strong><em>${entry.city || 'United Kingdom'} · ${money(entry.budget)} · ${new Date(entry.ts).toLocaleDateString('en-GB')}</em></span>
+        <b>→</b>
+      </button>`).join('')}</div>
+    <p class="fineprint">Saved on this device only — open one to jump straight to its finished plan and PDF.</p>
+  </section>`;
+}
+
 // Demo-catalogue plan payload for the PDF when no live plan exists — same
 // scaling maths as resultsView, honestly labelled as demo data.
 function buildDemoPlan() {
@@ -317,7 +398,7 @@ function buildDemoPlan() {
   const rawContingency = Math.round(rawProducts * 0.05);
   const rawTotal = rawProducts + rawShipping + rawTax + rawContingency;
   const scale = rawTotal > state.budget ? (state.budget * .965) / rawTotal : 1;
-  const items = s.items.map(item => [item[0], item[1], Math.round(item[2] * scale), item[3], item[4], null, null, null]);
+  const items = s.items.map(item => [item[0], item[1], Math.round(item[2] * scale), item[3], item[4], null, null, null, null]);
   const products = items.reduce((n, item) => n + item[2], 0);
   const shipping = Math.round(rawShipping * scale), tax = Math.round(rawTax * scale), contingency = Math.round(rawContingency * scale);
   const total = products + shipping + tax + contingency;
@@ -343,6 +424,12 @@ function bindBrief() {
   // user talks to the coordinator (or types) from there; phones pair at /connect.
   document.querySelector('[data-start-3d]').addEventListener('click', () => runSwarm3D());
   document.querySelector('[data-about]').addEventListener('click', showAbout);
+  document.querySelectorAll('[data-recent]').forEach(button =>
+    button.addEventListener('click', () => openRecent(Number(button.dataset.recent))));
+  document.querySelector('[data-clear-recents]')?.addEventListener('click', () => {
+    localStorage.removeItem(RECENTS_KEY);
+    showBrief();
+  });
 }
 
 function createVoiceRecorder() {
@@ -602,7 +689,7 @@ function startPlanningTicker() {
 
 async function runSwarm(text) {
   if (state.running) return; state.running = true;
-  state.plan = null; state.conceptImage = null; state.imagePromise = null;
+  state.plan = null; state.conceptImage = null; state.savedRunId = null; state.imagePromise = null;
   app.innerHTML = workspaceView(); window.scrollTo(0, 0);
   document.querySelector('[data-about]').addEventListener('click', showAbout);
   if (api.live && text) {
@@ -628,7 +715,7 @@ async function runSwarm(text) {
 
 async function runSwarm3D() {
   if (state.running) return;
-  state.plan = null; state.conceptImage = null; state.imagePromise = null;
+  state.plan = null; state.conceptImage = null; state.savedRunId = null; state.imagePromise = null;
   app.innerHTML = `${header()}
     <main class="xr-shell">
       <div class="xr-canvas" id="xr-canvas"></div>
@@ -712,6 +799,7 @@ async function runSwarm3D() {
       }
       live.send({ type: 'status', status: { text: 'Launch plan ready', phase: 'COMPLETE', progress: 100 } });
       if (btn) { btn.hidden = false; btn.disabled = false; btn.textContent = 'View launch plan ↗'; }
+      saveRecentSwarm();
     },
     onExit: null
   });

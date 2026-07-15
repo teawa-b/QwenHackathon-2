@@ -506,7 +506,7 @@ export async function createPlan(text) {
       // The control's full package rides along so the user can inspect what
       // the solo agent actually proposed, not just its score.
       singleItems = baselineItems.slice(0, 9)
-        .map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier]);
+        .map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier, null, item.quantity]);
     }
   }
   const comparison = {
@@ -550,7 +550,7 @@ export async function createPlan(text) {
     team_size: Math.max(1, Math.round(Number(raw.team_size) || 1)),
     budget_gbp: budget,
     agents,
-    items: items.map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier, item.agent]),
+    items: items.map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier, item.agent, item.quantity]),
     events: timeline,
     risks,
     assumptions: (raw.assumptions || []).map(String).slice(0, 5),

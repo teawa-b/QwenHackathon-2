@@ -262,7 +262,7 @@ export function showConnect(app, prefillCode) {
           <div class="r-item">
             <b><a href="${esc(item[5] || aliSearch(item[0]))}" target="_blank" rel="noopener noreferrer">${esc(item[0])}</a></b>
             <strong>${money(item[2])}</strong>
-            <p>${esc(item[1])}${item[6] ? ` · ${esc(item[6])}` : ''}</p>
+            <p>${item[8] > 1 ? `Qty ${item[8]} · ` : ''}${esc(item[1])}${item[6] ? ` · ${esc(item[6])}` : ''}</p>
           </div>`).join('')}
         </div>
         <button class="pdf-btn" id="pdf-btn">DOWNLOAD PDF REPORT</button>

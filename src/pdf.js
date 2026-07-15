@@ -104,9 +104,9 @@ export async function buildPlanPdf(plan, brief, imageUrl) {
   // ---- Items ----
   sectionTitle('RECOMMENDED PACKAGE');
   for (let i = 0; i < plan.items.length; i++) {
-    const [title, detail, price, priority, evidence, url, supplier] = plan.items[i];
+    const [title, detail, price, priority, evidence, url, supplier, , quantity] = plan.items[i];
     const titleLines = doc.setFont('helvetica', 'bold').setFontSize(10.5).splitTextToSize(String(title), CW - 130);
-    const metaLine = [detail, supplier].filter(Boolean).join('  ·  ');
+    const metaLine = [quantity > 1 ? `Qty ${quantity}` : null, detail, supplier].filter(Boolean).join('  ·  ');
     const metaLines = metaLine ? doc.setFont('helvetica', 'normal').setFontSize(8.5).splitTextToSize(metaLine, CW - 130) : [];
     const rowHeight = 16 + titleLines.length * 13 + metaLines.length * 11 + 13;
     ensureRoom(rowHeight + 4);
@@ -217,8 +217,8 @@ export async function buildPlanPdf(plan, brief, imageUrl) {
     }
     if (cmp.single_items?.length) {
       sectionTitle("SINGLE AGENT'S PACKAGE — FOR REFERENCE");
-      for (const [title, detail, price, priority, evidence, url, supplier] of cmp.single_items) {
-        const meta = [detail, supplier, `${priority} · ${evidence}`].filter(Boolean).join('  ·  ');
+      for (const [title, detail, price, priority, evidence, url, supplier, , quantity] of cmp.single_items) {
+        const meta = [quantity > 1 ? `Qty ${quantity}` : null, detail, supplier, `${priority} · ${evidence}`].filter(Boolean).join('  ·  ');
         const metaLines = doc.setFont('helvetica', 'normal').setFontSize(8).splitTextToSize(meta, CW - 110);
         ensureRoom(13 + metaLines.length * 10 + 12);
         doc.setFont('helvetica', 'bold').setFontSize(9.5).setTextColor(...INK);
