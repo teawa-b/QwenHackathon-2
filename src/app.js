@@ -1,4 +1,5 @@
 import './style.css';
+import { sfx } from './audio.js';
 
 const scenarios = {
   studio: {
@@ -78,7 +79,7 @@ const scenarios = {
   }
 };
 
-const state = { phase: 'brief', scenario: scenarios.studio, budget: 10000, city: 'Coventry', team: 4, running: false, plan: null, conceptImage: null };
+const state = { scenario: scenarios.studio, budget: 10000, city: 'Coventry', team: 4, running: false, plan: null, conceptImage: null, session: null };
 
 const api = {
   live: false,
@@ -92,11 +93,7 @@ const api = {
     } catch { this.live = false; }
     document.querySelectorAll('[data-mode-label]').forEach(el => { el.textContent = modeLabel(); });
     document.querySelectorAll('[data-live-copy]').forEach(el => {
-      el.textContent = this.live ? 'Live planning · Qwen speech recognition' : 'Demo catalogue · add a Qwen key for live voice';
-    });
-    document.querySelectorAll('[data-voice]').forEach(button => {
-      button.setAttribute('aria-label', this.live ? 'Speak your business brief' : 'Voice input unavailable in demo mode');
-      button.title = this.live ? 'Speak your brief — transcribed by Qwen ASR' : 'Voice input activates when Qwen Cloud is connected';
+      el.textContent = this.live ? 'Live planning · Qwen Cloud connected.' : 'Running on the demo catalogue.';
     });
   },
   async request(path, payload) {
@@ -113,7 +110,16 @@ const api = {
   },
   plan(text) { return this.request('/api/plan', { text }); },
   transcribe(audio, mime) { return this.request('/api/transcribe', { audio, mime }); },
-  image(payload) { return this.request('/api/image', payload); }
+  image(payload) { return this.request('/api/image', payload); },
+  // Session helpers are fire-and-forget where losing one update must not break the run.
+  createSession() { return this.request('/api/session', {}); },
+  push(code, kind, payload) {
+    return fetch(`/api/session/${code}/${kind}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => {});
+  }
 };
 
 function modeLabel() { return api.live ? 'LIVE · QWEN CLOUD' : 'DEMO CATALOGUE'; }
@@ -132,6 +138,9 @@ function money(value) {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(value);
 }
 
+const alibabaUrl = query => `https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent(query)}`;
+const itemLink = item => item[5] || alibabaUrl(item[0]);
+
 function header() {
   return `<header class="topbar">
     <a class="brand" href="#" aria-label="SupplySwarm home"><span class="brand-mark"><i></i><i></i><i></i></span><span>SUPPLY<em>SWARM</em></span></a>
@@ -140,48 +149,228 @@ function header() {
   </header>`;
 }
 
-function briefView() {
+// ---------------------------------------------------------------------------
+// Landing — two doors only: the VR room, or the mobile companion.
+// ---------------------------------------------------------------------------
+
+function landingView() {
   return `${header()}
-  <main class="brief-shell">
-    <section class="hero-copy">
-      <div class="eyebrow"><span>01</span> Procurement, assembled</div>
-      <h1>Build the business.<br><strong>We’ll source the rest.</strong></h1>
-      <p>Describe your idea. A society of specialist agents will turn it into an evidence-led equipment and supplier plan—without crossing your budget.</p>
-    </section>
-    <section class="command-card">
-      <div class="robot-stage" aria-hidden="true">
-        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
-        <div class="bot-shadow"></div>
-        <div class="bot">
-          <div class="antenna"><span></span></div><div class="ear left"></div><div class="ear right"></div>
-          <div class="face"><b></b><b></b><div class="mouth"></div></div>
-          <div class="body"><span class="core"></span></div>
-        </div>
-        <div class="signal signal-a">£</div><div class="signal signal-b">✓</div><div class="signal signal-c">⌁</div>
-      </div>
-      <div class="prompt-area">
-        <div class="prompt-label"><span class="live-dot"></span> MAIN ROBOT // READY</div>
-        <label for="idea">What business are you building?</label>
-        <div class="input-wrap">
-          <textarea id="idea" rows="3" maxlength="280" placeholder="Tell us what you're building, where, your budget, and roughly how many people it needs to support."></textarea>
-          <button class="voice" type="button" data-voice aria-label="${api.live ? 'Speak your business brief' : 'Voice input unavailable in demo mode'}" title="${api.live ? 'Speak your brief — transcribed by Qwen ASR' : 'Voice input activates when Qwen Cloud is connected'}">⌁</button>
-        </div>
-        <div class="examples" aria-label="Example briefs">
-          <button data-example="studio">Game studio · £10k</button>
-          <button data-example="gym">Small gym · £15k</button>
-          <button data-example="podcast">Podcast room · £5k</button>
-        </div>
-        <button class="assemble" data-start><span>ASSEMBLE MY SWARM</span><b>↗</b></button>
-        <button class="assemble xr-launch" data-start-3d><span>ENTER 3D OPS ROOM · VR</span><b>◈</b></button>
-        <p class="fineprint">No purchases or supplier messages are sent. Every consequential action requires your approval.</p>
-      </div>
-    </section>
-    <section class="proof-strip">
-      <div><b>06</b><span>Specialist agents</span></div><div><b>01</b><span>Shared budget</span></div><div><b>100%</b><span>Evidence labelled</span></div>
-      <p>Powered by <strong>QWEN CLOUD</strong><br><span data-live-copy>${api.live ? 'Live planning · Qwen speech recognition' : 'Demo catalogue · add a Qwen key for live voice'}</span></p>
-    </section>
+  <main class="landing">
+    <div class="landing-head">
+      <div class="eyebrow"><span>SUPPLYSWARM</span> A procurement department, formed on demand</div>
+      <h1>Say what you want to build.<br><strong>A swarm sources it.</strong></h1>
+      <p class="landing-desc">SupplySwarm turns a spoken business idea into a complete equipment plan. Describe your business and budget to the coordinator robot in VR; it assembles a team of specialist AI agents that pick the equipment, price it realistically, check it against your budget with real shipping and tax maths, and hand you a finished launch plan — with a concept image of your future space, Alibaba product links for every item, and a PDF you can keep.</p>
+      <ul class="steps">
+        <li><b>1</b> Speak your brief in VR</li>
+        <li><b>2</b> Specialist agents source &amp; price</li>
+        <li><b>3</b> Critic checks the budget</li>
+        <li><b>4</b> PDF plan on your phone</li>
+      </ul>
+    </div>
+    <div class="doors">
+      <section class="door door-vr">
+        <div class="door-tag">HEADSET / DESKTOP</div>
+        <h2>Use in VR</h2>
+        <p>Enter the 3D operations room. Hold the coordinator robot, speak your business brief, and watch the specialist swarm assemble around you.</p>
+        <button class="assemble" data-vr><span>USE IN VR</span><b>◈</b></button>
+        <em>Also works on desktop — drag to orbit, hold the robot to talk.</em>
+      </section>
+      <section class="door door-mobile">
+        <div class="door-tag">PHONE</div>
+        <h2>Join session on mobile</h2>
+        <p>Enter the 4-letter code shown inside the VR room. Send the brief from your phone, follow the swarm live, and receive the finished plan as a PDF.</p>
+        <button class="assemble mobile-join" data-join><span>JOIN SESSION ON MOBILE</span><b>↗</b></button>
+        <em>Live progress, concept image, Alibaba product links, downloadable PDF.</em>
+      </section>
+    </div>
+    <p class="fineprint landing-fine">No purchases or supplier messages are ever sent. Every consequential action requires your approval. <span data-live-copy>${api.live ? 'Live planning · Qwen Cloud connected.' : 'Running on the demo catalogue.'}</span></p>
   </main>`;
 }
+
+function showLanding() {
+  disconnectMobile();
+  state.running = false;
+  app.innerHTML = landingView();
+  document.querySelector('[data-vr]').addEventListener('click', () => runSwarm3D());
+  document.querySelector('[data-join]').addEventListener('click', () => showJoin());
+  document.querySelector('[data-about]').addEventListener('click', showAbout);
+  window.scrollTo(0, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Mobile companion — join with a code, send the brief, follow along, get PDF.
+// ---------------------------------------------------------------------------
+
+const mobile = { source: null, code: null };
+
+function disconnectMobile() {
+  mobile.source?.close();
+  mobile.source = null;
+  mobile.code = null;
+}
+
+function showJoin(prefill = '') {
+  disconnectMobile();
+  app.innerHTML = `${header()}
+  <main class="join-shell">
+    <section class="join-card">
+      <div class="eyebrow"><span>MOBILE</span> Join a live session</div>
+      <h1>Enter the room code.</h1>
+      <p>The 4-letter code is shown inside the VR operations room, next to the coordinator robot.</p>
+      <div class="code-row">
+        <input id="join-code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" value="${prefill}">
+        <button class="assemble" data-connect><span>CONNECT</span><b>↗</b></button>
+      </div>
+      <p class="join-error" id="join-error" hidden></p>
+      <button class="linklike" data-back>← Back</button>
+    </section>
+  </main>`;
+  window.scrollTo(0, 0);
+  const input = document.querySelector('#join-code');
+  const error = document.querySelector('#join-error');
+  input.addEventListener('input', () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); error.hidden = true; });
+  const connect = async () => {
+    const code = input.value.trim().toUpperCase();
+    if (code.length !== 4) { error.textContent = 'The code is 4 letters — check the VR room.'; error.hidden = false; return; }
+    try {
+      const response = await fetch(`/api/session/${code}`);
+      if (!response.ok) throw new Error();
+      showMobileLive(code);
+    } catch {
+      error.textContent = 'Session not found. Check the code and that the VR room is open.';
+      error.hidden = false;
+    }
+  };
+  document.querySelector('[data-connect]').addEventListener('click', connect);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') connect(); });
+  document.querySelector('[data-back]').addEventListener('click', showLanding);
+  document.querySelector('[data-about]').addEventListener('click', showAbout);
+  input.focus();
+}
+
+function showMobileLive(code) {
+  mobile.code = code;
+  app.innerHTML = `${header()}
+  <main class="mobile-live">
+    <section class="mobile-head">
+      <div><div class="eyebrow"><span>CONNECTED</span> Session ${code}</div><h1 id="m-title">Swarm standing by</h1><p id="m-status">Waiting for a brief — send one below or speak in VR.</p></div>
+      <div class="code-chip">${code}</div>
+    </section>
+    <section class="m-brief" id="m-brief-card">
+      <label for="m-brief">Send the business brief from your phone</label>
+      <div class="input-wrap">
+        <textarea id="m-brief" rows="3" maxlength="280" placeholder="e.g. A four-person game studio in Coventry with a £10,000 equipment budget."></textarea>
+        ${api.live ? '<button class="voice" type="button" data-voice aria-label="Speak your business brief" title="Speak your brief — transcribed by Qwen ASR">⌁</button>' : ''}
+      </div>
+      <button class="assemble" data-send><span>SEND TO THE SWARM</span><b>↗</b></button>
+      <p class="m-send-note" id="m-send-note" hidden></p>
+    </section>
+    <section class="status-ribbon m-ribbon"><span id="m-phase">AWAITING BRIEF</span><div class="progress"><i id="m-progress"></i></div><b id="m-pct">00%</b></section>
+    <section class="m-feed" id="m-feed" aria-live="polite"></section>
+  </main>`;
+  window.scrollTo(0, 0);
+  document.querySelector('[data-about]').addEventListener('click', showAbout);
+  bindVoice('#m-brief');
+
+  const note = document.querySelector('#m-send-note');
+  document.querySelector('[data-send]').addEventListener('click', async () => {
+    const text = document.querySelector('#m-brief').value.trim();
+    if (!text) { note.textContent = 'Describe the business first.'; note.hidden = false; return; }
+    try {
+      const response = await fetch(`/api/session/${code}/brief`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || 'Could not send the brief');
+      }
+      note.textContent = 'Brief sent — the coordinator has it.';
+      note.hidden = false;
+    } catch (err) {
+      note.textContent = err.message;
+      note.hidden = false;
+    }
+  });
+
+  const feed = document.querySelector('#m-feed');
+  const setStatus = text => { const el = document.querySelector('#m-status'); if (el) el.textContent = text; };
+  const setTitle = text => { const el = document.querySelector('#m-title'); if (el) el.textContent = text; };
+  const hideBriefCard = () => { const card = document.querySelector('#m-brief-card'); if (card) card.hidden = true; };
+
+  const source = new EventSource(`/api/session/${code}/stream`);
+  mobile.source = source;
+  source.addEventListener('hello', e => {
+    const data = JSON.parse(e.data);
+    if (data.status && data.status !== 'idle') { hideBriefCard(); setStatus('Session in progress — following live.'); }
+    if (data.briefLine) setTitle(data.briefLine);
+  });
+  source.addEventListener('brief', () => {
+    hideBriefCard();
+    setStatus('Brief received — the coordinator is on it.');
+  });
+  source.addEventListener('state', e => {
+    const data = JSON.parse(e.data);
+    if (data.briefLine) setTitle(data.briefLine);
+    if (data.status === 'planning') { hideBriefCard(); setStatus('Qwen coordinator is planning your launch…'); }
+    if (data.status === 'running') { hideBriefCard(); setStatus('Specialists are working — live from the ops room.'); }
+  });
+  source.addEventListener('event', e => {
+    const { who, text, progress, phase } = JSON.parse(e.data);
+    const row = document.createElement('div');
+    row.className = `event m-event ${/critic/i.test(who) ? 'warning' : ''}`;
+    row.innerHTML = `<b>${who}</b><p>${text}</p>`;
+    feed?.prepend(row);
+    while (feed && feed.children.length > 12) feed.lastChild.remove();
+    const bar = document.querySelector('#m-progress'), pct = document.querySelector('#m-pct'), ph = document.querySelector('#m-phase');
+    if (bar) bar.style.width = `${progress}%`;
+    if (pct) pct.textContent = `${String(progress).padStart(2, '0')}%`;
+    if (ph && phase) ph.textContent = phase;
+  });
+  source.addEventListener('complete', e => {
+    const { plan, hasImage } = JSON.parse(e.data);
+    showMobileResults(plan, code, hasImage);
+  });
+  source.onerror = () => setStatus('Connection lost — reconnecting…');
+}
+
+function showMobileResults(plan, code, hasImage) {
+  mobile.source?.close();
+  mobile.source = null;
+  const costs = plan.costs || {};
+  const overBudget = (costs.remaining ?? 0) < 0;
+  app.innerHTML = `${header()}
+  <main class="results mobile-results">
+    <section class="result-hero">
+      <div><div class="eyebrow"><span>SESSION ${code}</span> ${plan.live ? 'Live plan generated by Qwen Cloud' : 'Demo catalogue plan'}</div><h1>Your launch plan<br><strong>is ready.</strong></h1><p>${plan.business_type} · ${plan.city || 'United Kingdom'} · ${plan.team_size}-person team</p></div>
+      <div class="approval-seal ${overBudget ? 'warn' : ''}"><span>${overBudget ? '!' : '✓'}</span><b>${overBudget ? 'OVER<br>BUDGET' : 'BUDGET<br>VALID'}</b></div>
+    </section>
+    <a class="assemble pdf-cta" href="/api/session/${code}/report.pdf"><span>DOWNLOAD YOUR PDF PLAN</span><b>⬇</b></a>
+    ${hasImage ? `<figure class="concept-frame m-concept"><img src="/api/session/${code}/image" alt="AI concept visual of the business"><figcaption>AI concept visual — illustrative only.</figcaption></figure>` : ''}
+    <section class="result-grid">
+      <div class="package-card">
+        <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div></div>
+        <div class="items">${plan.items.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[0]}</h3><p>${item[1]}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span></div><a class="ali-link" href="${item[5] || alibabaUrl(item[0])}" target="_blank" rel="noopener">Find on Alibaba.com ↗</a></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+      </div>
+      <aside class="cost-card">
+        <span class="label">LANDED COST ESTIMATE</span><div class="total"><small>Package total</small><strong>${money(costs.total || 0)}</strong><span>of ${money(plan.budget_gbp)}</span></div>
+        <div class="budget-meter"><i style="width:${Math.min(100, (costs.total || 0) / plan.budget_gbp * 100)}%"></i></div>
+        <div class="remaining"><span>Budget ${overBudget ? 'exceeded by' : 'remaining'}</span><b>${money(Math.abs(costs.remaining || 0))}</b></div>
+        <dl><div><dt>Products</dt><dd>${money(costs.products || 0)}</dd></div><div><dt>Shipping estimate</dt><dd>${money(costs.shipping || 0)}</dd></div><div><dt>VAT & duties estimate</dt><dd>${money(costs.tax || 0)}</dd></div><div><dt>Contingency</dt><dd>${money(costs.contingency || 0)}</dd></div></dl>
+        <p class="estimate-note">Prices are ${plan.live ? 'live Qwen model estimates' : 'demo catalogue estimates'}, not supplier quotations. Alibaba links open live marketplace searches — verify before purchasing.</p>
+      </aside>
+    </section>
+    ${plan.risks?.length || plan.assumptions?.length ? `<section class="evaluation"><div><span class="label">SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2></div><div class="findings"><div><span>RISKS</span><ul>${(plan.risks || []).map(r => `<li>${r}</li>`).join('') || '<li>No blocking risks recorded.</li>'}</ul></div><div><span>ASSUMPTIONS</span><ul>${(plan.assumptions || []).map(a => `<li>${a}</li>`).join('') || '<li>No assumptions recorded.</li>'}</ul></div></div></section>` : ''}
+    <section class="result-actions"><button class="primary" data-restart>DONE <b>✓</b></button></section>
+  </main>`;
+  window.scrollTo(0, 0);
+  sfx.play('complete', 0.6);
+  document.querySelector('[data-restart]').addEventListener('click', showLanding);
+  document.querySelector('[data-about]').addEventListener('click', showAbout);
+}
+
+// ---------------------------------------------------------------------------
+// Brief parsing + voice (shared by VR host and mobile)
+// ---------------------------------------------------------------------------
 
 function parseBrief(text) {
   state.scenario = Object.values(scenarios).find(s => s !== scenarios.generic && s.match.test(text)) || scenarios.generic;
@@ -196,127 +385,6 @@ function parseBrief(text) {
   state.team = team ? Number(team[1]) : state.scenario.team;
   const places = ['Coventry', 'Birmingham', 'London', 'Manchester', 'Leeds', 'Bristol', 'Liverpool'];
   state.city = places.find(p => new RegExp(p, 'i').test(text)) || 'United Kingdom';
-}
-
-function workspaceView() {
-  const s = state.scenario;
-  return `${header()}
-    <main class="workspace">
-      <section class="workspace-head">
-        <div><div class="eyebrow"><span>02</span> Swarm operations room</div><h1>${s.type}</h1><p>${state.team}-person launch · ${state.city} · Equipment only</p></div>
-        <div class="budget-chip"><span>BUDGET CEILING</span><strong>${money(state.budget)}</strong></div>
-      </section>
-      <section class="ops-grid">
-        <aside class="agent-panel">
-          <div class="panel-title"><span>ACTIVE AGENTS</span><b id="agent-count">0 / ${s.agents.length}</b></div>
-          <div class="agent-list">${s.agents.map((a, i) => `<article class="agent" data-agent="${i}"><div class="agent-avatar">${a[0]}</div><div><strong>${a[1]}</strong><span>${a[2]}</span></div><i></i></article>`).join('')}</div>
-        </aside>
-        <section class="mission-panel">
-          <div class="hive-visual" aria-label="Animated agent coordination map">
-            <div class="hub"><div class="mini-face"><i></i><i></i></div><span>COORDINATOR</span></div>
-            ${s.agents.slice(0, 7).map((a, i) => `<div class="node node-${i + 1}" data-node="${i}"><b>${a[0]}</b></div>`).join('')}
-            <svg viewBox="0 0 600 360" preserveAspectRatio="none" aria-hidden="true">${s.agents.slice(0, 7).map((_, i) => `<line x1="300" y1="180" x2="${[105,185,405,495,190,410,300][i]}" y2="${[82,290,290,82,55,55,325][i]}"/>`).join('')}</svg>
-          </div>
-          <div class="event-console">
-            <div class="console-head"><span>LIVE AGENT EVENTS</span><div><i></i><i></i><i></i></div></div>
-            <div id="events" class="events" aria-live="polite"></div>
-          </div>
-        </section>
-        <aside class="brief-panel">
-          <div class="panel-title"><span>VALIDATED BRIEF</span><b>LOCKED</b></div>
-          <dl><div><dt>Business</dt><dd>${s.type}</dd></div><div><dt>Location</dt><dd>${state.city}, UK</dd></div><div><dt>Team</dt><dd>${state.team} people</dd></div><div><dt>Budget</dt><dd>${money(state.budget)}</dd></div><div><dt>Scope</dt><dd>Equipment only</dd></div><div><dt>Marketplace</dt><dd>Alibaba.com</dd></div></dl>
-          <div class="guardrail"><b>HUMAN APPROVAL</b><span>Required before supplier contact or purchase</span></div>
-        </aside>
-      </section>
-      <section class="status-ribbon"><span id="phase-label">VALIDATING BRIEF</span><div class="progress"><i id="progress-bar"></i></div><b id="progress-value">08%</b></section>
-    </main>`;
-}
-
-function resultsView() {
-  const s = state.scenario;
-  const plan = state.plan;
-  const rawProducts = s.items.reduce((n, item) => n + item[2], 0);
-  const rawShipping = Math.round(rawProducts * 0.075);
-  const rawTax = Math.round((rawProducts + rawShipping) * 0.08);
-  const rawContingency = Math.round(rawProducts * 0.05);
-  let total = rawProducts + rawShipping + rawTax + rawContingency;
-  // Demo catalogue items may be rescaled to a custom budget. Live Qwen plans are
-  // never silently rescaled: if the critic could not fit the budget, we say so.
-  const scale = !plan && total > state.budget ? (state.budget * .965) / total : 1;
-  const adjusted = s.items.map(item => [...item.slice(0, 2), Math.round(item[2] * scale), ...item.slice(3)]);
-  const subtotal = adjusted.reduce((n, item) => n + item[2], 0);
-  const finalShipping = Math.round(rawShipping * scale), finalTax = Math.round(rawTax * scale), finalContingency = Math.round(rawContingency * scale);
-  total = subtotal + finalShipping + finalTax + finalContingency;
-  const remaining = state.budget - total;
-  const overBudget = total > state.budget;
-  const insight = plan
-    ? `<section class="evaluation">
-        <div><span class="label">QWEN SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2><p>Generated live by Qwen Cloud${plan.revised ? ' — the critic caught an over-budget package and revised it before approval.' : '.'}</p></div>
-        <div class="findings">
-          <div><span>RISKS</span><ul>${plan.risks.map(r => `<li>${r}</li>`).join('') || '<li>No blocking risks recorded.</li>'}</ul></div>
-          <div><span>ASSUMPTIONS</span><ul>${plan.assumptions.map(a => `<li>${a}</li>`).join('') || '<li>No assumptions recorded.</li>'}</ul></div>
-        </div>
-      </section>
-      <section class="concept">
-        <div><span class="label">CONCEPT VISUAL</span><h2>See your business.</h2><p>Qwen can generate an illustrative concept image of the finished space. Illustrative only — not a floor plan.</p><button class="secondary" data-generate-image>GENERATE CONCEPT IMAGE</button></div>
-        <figure class="concept-frame" data-concept>${state.conceptImage ? `<img src="${state.conceptImage}" alt="AI concept visual of the business">` : '<span>No image generated yet</span>'}</figure>
-      </section>`
-    : `<section class="evaluation">
-        <div><span class="label">WHY A SWARM?</span><h2>One brief. Better decisions.</h2><p>The critic caught a seeded over-budget plan and the specialists rebuilt it as a mixed-tier package. (Scripted demo comparison.)</p></div>
-        <div class="compare"><div class="single"><span>SINGLE AGENT</span><b>${money(Math.round(state.budget * 1.107))}</b><p>Shipping omitted · 2 unverified items</p></div><div class="multi"><span>SUPPLYSWARM</span><b>${money(total)}</b><p>Landed cost included · ${adjusted.length}/${adjusted.length} items evidenced</p></div></div>
-      </section>`;
-  return `${header()}
-  <main class="results">
-    <section class="result-hero">
-      <div><div class="eyebrow"><span>03</span> ${plan ? 'Live plan generated by Qwen Cloud' : 'Package approved by critic'}</div><h1>Your launch plan<br><strong>is ready.</strong></h1><p>${s.type} · ${state.city} · ${state.team}-person team</p></div>
-      <div class="approval-seal ${overBudget ? 'warn' : ''}"><span>${overBudget ? '!' : '✓'}</span><b>${overBudget ? 'OVER<br>BUDGET' : 'BUDGET<br>VALID'}</b></div>
-    </section>
-    <section class="result-grid">
-      <div class="package-card">
-        <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div><button data-restart>NEW BRIEF</button></div>
-        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[0]}</h3><p>${item[1]}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
-      </div>
-      <aside class="cost-card">
-        <span class="label">LANDED COST ESTIMATE</span><div class="total"><small>Package total</small><strong>${money(total)}</strong><span>of ${money(state.budget)}</span></div>
-        <div class="budget-meter"><i style="width:${Math.min(100, total / state.budget * 100)}%"></i></div>
-        <div class="remaining"><span>Budget ${overBudget ? 'exceeded by' : 'remaining'}</span><b>${money(Math.abs(remaining))}</b></div>
-        <dl><div><dt>Products</dt><dd>${money(subtotal)}</dd></div><div><dt>Shipping estimate</dt><dd>${money(finalShipping)}</dd></div><div><dt>VAT & duties estimate</dt><dd>${money(finalTax)}</dd></div><div><dt>Contingency</dt><dd>${money(finalContingency)}</dd></div></dl>
-        <p class="estimate-note">${plan ? 'Prices are live Qwen model estimates, not supplier quotations. Verify against real listings before purchasing.' : 'Estimates are indicative, not supplier quotations. Demo catalogue data is clearly separated from live marketplace data.'}</p>
-      </aside>
-    </section>
-    ${insight}
-    <section class="result-actions"><button class="secondary" onclick="window.print()">PRINT REPORT</button><button class="primary" data-restart>START ANOTHER PLAN <b>↗</b></button></section>
-  </main>`;
-}
-
-function showBrief() {
-  state.running = false; app.innerHTML = briefView(); bindBrief(); window.scrollTo(0, 0);
-}
-
-function bindBrief() {
-  document.querySelectorAll('[data-example]').forEach(btn => btn.addEventListener('click', () => {
-    const copy = { studio: 'I want to start a four-person game development studio in Coventry with a £10,000 equipment budget for PC and VR games.', gym: 'I want to open a small training gym in Birmingham with a £15,000 equipment budget.', podcast: 'I need a four-person podcast production room in Manchester with a £5,000 equipment budget.' };
-    document.querySelector('#idea').value = copy[btn.dataset.example];
-  }));
-  document.querySelector('[data-start]').addEventListener('click', () => {
-    const idea = document.querySelector('#idea');
-    const text = idea.value.trim();
-    if (!text) {
-      idea.setCustomValidity('Describe your business first, or choose an example brief.');
-      idea.reportValidity();
-      idea.focus();
-      return;
-    }
-    idea.setCustomValidity('');
-    parseBrief(text);
-    runSwarm(text);
-  });
-  // The 3D room always opens idle. A landing-page example must never start or
-  // prefill the room: the user talks to the coordinator (or types) from there.
-  document.querySelector('[data-start-3d]').addEventListener('click', () => runSwarm3D());
-  document.querySelector('#idea').addEventListener('input', event => event.currentTarget.setCustomValidity(''));
-  document.querySelector('[data-about]').addEventListener('click', showAbout);
-  bindVoice();
 }
 
 function createVoiceRecorder() {
@@ -359,7 +427,7 @@ function createVoiceRecorder() {
   };
 }
 
-function bindVoice() {
+function bindVoice(inputSelector = '#idea') {
   const button = document.querySelector('[data-voice]');
   if (!button) return;
   const recorder = createVoiceRecorder();
@@ -371,8 +439,8 @@ function bindVoice() {
       try {
         const { base64, mime } = await recorder.stop();
         const { text } = await api.transcribe(base64, mime);
-        const idea = document.querySelector('#idea');
-        if (idea && text) idea.value = text;
+        const target = document.querySelector(inputSelector);
+        if (target && text) target.value = text;
       } catch (err) {
         button.title = `Transcription failed: ${err.message}`;
       } finally {
@@ -441,7 +509,7 @@ async function recordingToWav(blob) {
 function showAbout() {
   const dialog = document.createElement('dialog');
   dialog.className = 'about-dialog';
-  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division, specialist sourcing, deterministic cost calculation, critic-led revision, and human approval gates.</p><p>This hosted build uses a transparent demo catalogue. Live Qwen, Alibaba MCP, voice, image generation and supplier actions require server credentials and are never simulated as live.</p>`;
+  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division, specialist sourcing, deterministic cost calculation, critic-led revision, and human approval gates — hosted in VR with a live mobile companion.</p><p>Prices are estimates and Alibaba links open live marketplace searches. No purchases or supplier messages are ever sent.</p>`;
   document.body.append(dialog); dialog.showModal();
   dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
 }
@@ -462,10 +530,96 @@ function buildEvents() {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// Costs + plan payload (shared by the host results page, mobile, and the PDF)
+// ---------------------------------------------------------------------------
+
+function computeCosts() {
+  const s = state.scenario;
+  const rawProducts = s.items.reduce((n, item) => n + item[2], 0);
+  const rawShipping = Math.round(rawProducts * 0.075);
+  const rawTax = Math.round((rawProducts + rawShipping) * 0.08);
+  const rawContingency = Math.round(rawProducts * 0.05);
+  let total = rawProducts + rawShipping + rawTax + rawContingency;
+  // Demo catalogue items may be rescaled to a custom budget. Live Qwen plans are
+  // never silently rescaled: if the critic could not fit the budget, we say so.
+  const scale = !state.plan && total > state.budget ? (state.budget * .965) / total : 1;
+  const items = s.items.map(item => [item[0], item[1], Math.round(item[2] * scale), item[3], item[4], itemLink(item)]);
+  const products = items.reduce((n, item) => n + item[2], 0);
+  const shipping = Math.round(rawShipping * scale), tax = Math.round(rawTax * scale), contingency = Math.round(rawContingency * scale);
+  total = products + shipping + tax + contingency;
+  return { items, products, shipping, tax, contingency, total, remaining: state.budget - total, overBudget: total > state.budget };
+}
+
+function buildPlanPayload() {
+  const costs = computeCosts();
+  return {
+    live: Boolean(state.plan),
+    business_type: state.scenario.type,
+    city: state.city,
+    team_size: state.team,
+    budget_gbp: state.budget,
+    items: costs.items,
+    costs: { products: costs.products, shipping: costs.shipping, tax: costs.tax, contingency: costs.contingency, total: costs.total, remaining: costs.remaining },
+    risks: state.plan?.risks || [],
+    assumptions: state.plan?.assumptions || []
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Host results page (shown on the hosting device after the VR run)
+// ---------------------------------------------------------------------------
+
+function resultsView() {
+  const s = state.scenario;
+  const plan = state.plan;
+  const costs = computeCosts();
+  const { total, remaining, overBudget } = costs;
+  const insight = plan
+    ? `<section class="evaluation">
+        <div><span class="label">QWEN SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2><p>Generated live by Qwen Cloud${plan.revised ? ' — the critic caught an over-budget package and revised it before approval.' : '.'}</p></div>
+        <div class="findings">
+          <div><span>RISKS</span><ul>${plan.risks.map(r => `<li>${r}</li>`).join('') || '<li>No blocking risks recorded.</li>'}</ul></div>
+          <div><span>ASSUMPTIONS</span><ul>${plan.assumptions.map(a => `<li>${a}</li>`).join('') || '<li>No assumptions recorded.</li>'}</ul></div>
+        </div>
+      </section>
+      <section class="concept">
+        <div><span class="label">CONCEPT VISUAL</span><h2>See your business.</h2><p>Qwen generated an illustrative visual of the finished space. Illustrative only — not a floor plan.</p>${state.conceptImage ? '' : '<button class="secondary" data-generate-image>GENERATE CONCEPT IMAGE</button>'}</div>
+        <figure class="concept-frame" data-concept>${state.conceptImage ? `<img src="${state.conceptImage}" alt="AI concept visual of the business">` : '<span>No image generated yet</span>'}</figure>
+      </section>`
+    : `<section class="evaluation">
+        <div><span class="label">WHY A SWARM?</span><h2>One brief. Better decisions.</h2><p>The critic caught a seeded over-budget plan and the specialists rebuilt it as a mixed-tier package. (Scripted demo comparison.)</p></div>
+        <div class="compare"><div class="single"><span>SINGLE AGENT</span><b>${money(Math.round(state.budget * 1.107))}</b><p>Shipping omitted · 2 unverified items</p></div><div class="multi"><span>SUPPLYSWARM</span><b>${money(total)}</b><p>Landed cost included · ${costs.items.length}/${costs.items.length} items evidenced</p></div></div>
+      </section>`;
+  return `${header()}
+  <main class="results">
+    <section class="result-hero">
+      <div><div class="eyebrow"><span>03</span> ${plan ? 'Live plan generated by Qwen Cloud' : 'Package approved by critic'}</div><h1>Your launch plan<br><strong>is ready.</strong></h1><p>${s.type} · ${state.city} · ${state.team}-person team</p></div>
+      <div class="approval-seal ${overBudget ? 'warn' : ''}"><span>${overBudget ? '!' : '✓'}</span><b>${overBudget ? 'OVER<br>BUDGET' : 'BUDGET<br>VALID'}</b></div>
+    </section>
+    ${state.session ? `<a class="assemble pdf-cta" href="/api/session/${state.session}/report.pdf"><span>DOWNLOAD YOUR PDF PLAN</span><b>⬇</b></a>` : ''}
+    <section class="result-grid">
+      <div class="package-card">
+        <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div><button data-restart>NEW BRIEF</button></div>
+        <div class="items">${costs.items.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[0]}</h3><p>${item[1]}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span></div><a class="ali-link" href="${item[5]}" target="_blank" rel="noopener">Find on Alibaba.com ↗</a></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+      </div>
+      <aside class="cost-card">
+        <span class="label">LANDED COST ESTIMATE</span><div class="total"><small>Package total</small><strong>${money(total)}</strong><span>of ${money(state.budget)}</span></div>
+        <div class="budget-meter"><i style="width:${Math.min(100, total / state.budget * 100)}%"></i></div>
+        <div class="remaining"><span>Budget ${overBudget ? 'exceeded by' : 'remaining'}</span><b>${money(Math.abs(remaining))}</b></div>
+        <dl><div><dt>Products</dt><dd>${money(costs.products)}</dd></div><div><dt>Shipping estimate</dt><dd>${money(costs.shipping)}</dd></div><div><dt>VAT & duties estimate</dt><dd>${money(costs.tax)}</dd></div><div><dt>Contingency</dt><dd>${money(costs.contingency)}</dd></div></dl>
+        <p class="estimate-note">${plan ? 'Prices are live Qwen model estimates, not supplier quotations. Verify against real listings before purchasing.' : 'Estimates are indicative, not supplier quotations. Demo catalogue data is clearly separated from live marketplace data.'}</p>
+      </aside>
+    </section>
+    ${insight}
+    <section class="result-actions"><button class="secondary" onclick="window.print()">PRINT REPORT</button><button class="primary" data-restart>START ANOTHER PLAN <b>↗</b></button></section>
+  </main>`;
+}
+
 function showResults() {
   state.running = false;
   app.innerHTML = resultsView(); window.scrollTo(0, 0);
-  document.querySelectorAll('[data-restart]').forEach(b => b.addEventListener('click', showBrief));
+  document.querySelectorAll('[data-restart]').forEach(b => b.addEventListener('click', showLanding));
   document.querySelector('[data-about]').addEventListener('click', showAbout);
   document.querySelector('[data-generate-image]')?.addEventListener('click', generateConceptImage);
 }
@@ -495,35 +649,6 @@ async function generateConceptImage(event) {
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function pushConsoleEvent(index, who, text, warning = false) {
-  const feed = document.querySelector('#events');
-  if (!feed) return;
-  const row = document.createElement('div');
-  row.className = `event ${warning ? 'warning' : ''}`;
-  row.innerHTML = `<time>${String(index + 1).padStart(2, '0')}:${String((index * 7) % 60).padStart(2, '0')}</time><b>${who}</b><p>${text}</p>`;
-  feed.prepend(row);
-}
-
-async function playTimeline(events) {
-  const agentTotal = state.scenario.agents.length;
-  for (let i = 0; i < events.length; i++) {
-    const [who, text, progress] = events[i];
-    if (i < agentTotal) {
-      document.querySelector(`[data-agent="${i}"]`)?.classList.add('active'); document.querySelector(`[data-node="${i}"]`)?.classList.add('active');
-      const counter = document.querySelector('#agent-count');
-      if (counter) counter.textContent = `${i + 1} / ${agentTotal}`;
-    }
-    pushConsoleEvent(i, who, text, /critic/i.test(who));
-    const phaseIndex = Math.min(PHASE_NAMES.length - 1, Math.floor(i / Math.max(1, events.length - 1) * (PHASE_NAMES.length - 1)));
-    const label = document.querySelector('#phase-label');
-    if (label) label.textContent = PHASE_NAMES[phaseIndex];
-    const bar = document.querySelector('#progress-bar'), value = document.querySelector('#progress-value');
-    if (bar) bar.style.width = `${progress}%`;
-    if (value) value.textContent = `${String(progress).padStart(2, '0')}%`;
-    await wait(state.plan ? 900 : 620);
-  }
-}
-
 const PLANNING_LINES = [
   'Qwen Coordinator is analysing your brief…',
   'Designing your specialist agent team…',
@@ -532,55 +657,21 @@ const PLANNING_LINES = [
   'Running critic review on the draft package…'
 ];
 
-function startPlanningTicker() {
-  let index = 0;
-  const label = document.querySelector('#phase-label');
-  if (label) label.textContent = 'QWEN COORDINATOR PLANNING';
-  pushConsoleEvent(index, 'Coordinator', PLANNING_LINES[0]);
-  const interval = setInterval(() => {
-    index++;
-    pushConsoleEvent(index, 'Coordinator', PLANNING_LINES[index % PLANNING_LINES.length]);
-    const bar = document.querySelector('#progress-bar');
-    if (bar) bar.style.width = `${Math.min(18, 4 + index * 3)}%`;
-  }, 2400);
-  return () => clearInterval(interval);
-}
-
-async function runSwarm(text) {
-  if (state.running) return; state.running = true;
-  state.plan = null; state.conceptImage = null;
-  app.innerHTML = workspaceView(); window.scrollTo(0, 0);
-  document.querySelector('[data-about]').addEventListener('click', showAbout);
-  if (api.live && text) {
-    const stopTicker = startPlanningTicker();
-    try {
-      const plan = await api.plan(text);
-      stopTicker();
-      applyPlan(plan);
-      app.innerHTML = workspaceView();
-      document.querySelector('[data-about]').addEventListener('click', showAbout);
-      await playTimeline(plan.events);
-    } catch (err) {
-      stopTicker();
-      pushConsoleEvent(0, 'Coordinator', `Live planning unavailable (${err.message}). Continuing with the demo catalogue.`, true);
-      await wait(1400);
-      await playTimeline(buildEvents());
-    }
-  } else {
-    await playTimeline(buildEvents());
-  }
-  await wait(500); showResults();
-}
+// ---------------------------------------------------------------------------
+// The VR / 3D operations room (host)
+// ---------------------------------------------------------------------------
 
 async function runSwarm3D() {
   if (state.running) return;
-  state.plan = null; state.conceptImage = null;
+  state.plan = null; state.conceptImage = null; state.session = null;
   app.innerHTML = `${header()}
     <main class="xr-shell">
       <div class="xr-canvas" id="xr-canvas"></div>
       <div class="xr-hud">
         <div class="xr-hud-top">
-          <div class="xr-brief"><span>3D OPS ROOM</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em></div>
+          <div class="xr-brief"><span>3D OPS ROOM</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em>
+            <div class="xr-code" id="xr-code" hidden><span>MOBILE JOIN CODE</span><b id="xr-code-value">····</b></div>
+          </div>
           <div class="xr-hud-buttons">
             <button class="xr-btn" id="xr-vr" hidden>ENTER VR</button>
             <button class="xr-btn ghost" id="xr-back">EXIT 3D</button>
@@ -601,7 +692,9 @@ async function runSwarm3D() {
   window.scrollTo(0, 0);
   document.querySelector('[data-about]').addEventListener('click', showAbout);
   let room = null;
-  document.querySelector('#xr-back').addEventListener('click', () => { room?.dispose(); showBrief(); });
+  let hostStream = null;
+  const cleanupHost = () => { hostStream?.close(); hostStream = null; };
+  document.querySelector('#xr-back').addEventListener('click', () => { cleanupHost(); room?.dispose(); sfx.stopMusic(); showLanding(); });
 
   const { launchOpsRoom } = await import('./xr-room.js');
   if (!document.querySelector('#xr-canvas')) return;
@@ -616,17 +709,66 @@ async function runSwarm3D() {
     },
     onExit: null
   });
+  sfx.startMusic();
+
+  // Create the realtime session so phones can join with the code.
+  let sessionCode = null;
+  try {
+    sessionCode = (await api.createSession()).code;
+    state.session = sessionCode;
+    const chip = document.querySelector('#xr-code');
+    if (chip) { chip.hidden = false; document.querySelector('#xr-code-value').textContent = sessionCode; }
+    room.setSessionCode?.(sessionCode);
+    hostStream = new EventSource(`/api/session/${sessionCode}/stream`);
+    hostStream.addEventListener('brief', e => {
+      const { text } = JSON.parse(e.data);
+      if (state.running || room.isRunning()) return;
+      const input = document.querySelector('#xr-idea');
+      if (input) input.value = text;
+      room.setStatus('Brief received from mobile — assembling the swarm');
+      beginRun(text);
+    });
+  } catch { /* sessions unavailable — the room still works standalone */ }
+
+  const postState = (status, briefLine) => { if (sessionCode) api.push(sessionCode, 'state', { status, briefLine }); };
+  const postEvent = payload => { if (sessionCode) api.push(sessionCode, 'event', payload); };
+
+  let finalized = false;
+  async function finalizeRun() {
+    if (finalized) return; finalized = true;
+    let imageUrl = null;
+    if (api.live) {
+      postEvent({ who: 'Coordinator', text: 'Rendering your concept visual…', progress: 100, phase: 'RENDERING CONCEPT' });
+      try {
+        const { url } = await api.image({
+          business: state.scenario.type,
+          city: state.city,
+          items: state.scenario.items.map(item => item[0])
+        });
+        imageUrl = url;
+        state.conceptImage = url;
+      } catch (err) { console.warn('Concept image failed:', err.message); }
+    }
+    if (sessionCode) {
+      try { await api.request(`/api/session/${sessionCode}/complete`, { plan: buildPlanPayload(), imageUrl }); } catch {}
+    }
+  }
 
   room.callbacks.onEvent = ({ who, text, progress, phase }) => {
     const feed = document.querySelector('#xr-feed');
-    if (!feed) return;
-    const row = document.createElement('div');
-    row.className = `xr-event ${/critic/i.test(who) ? 'warning' : ''}`;
-    row.innerHTML = `<b>${who}</b><p>${text}</p>`;
-    feed.prepend(row);
-    while (feed.children.length > 3) feed.lastChild.remove();
-    document.querySelector('#xr-phase-label').textContent = phase;
-    document.querySelector('#xr-progress').style.width = `${progress}%`;
+    if (feed) {
+      const row = document.createElement('div');
+      row.className = `xr-event ${/critic/i.test(who) ? 'warning' : ''}`;
+      row.innerHTML = `<b>${who}</b><p>${text}</p>`;
+      feed.prepend(row);
+      while (feed.children.length > 3) feed.lastChild.remove();
+    }
+    const phaseLabel = document.querySelector('#xr-phase-label');
+    if (phaseLabel) phaseLabel.textContent = phase;
+    const bar = document.querySelector('#xr-progress');
+    if (bar) bar.style.width = `${progress}%`;
+    postEvent({ who, text, progress, phase });
+    if (progress >= 100) finalizeRun();
   };
   room.callbacks.onXRError = () => {
     const vrBtn = document.querySelector('#xr-vr');
@@ -655,8 +797,10 @@ async function runSwarm3D() {
     const ask = document.querySelector('#xr-ask');
     if (ask) ask.hidden = true;
     parseBrief(trimmed);
+    const briefLine = `${state.scenario.type} · ${money(state.budget)}`;
     if (api.live) {
       setPhase('QWEN COORDINATOR PLANNING');
+      postState('planning', briefLine);
       let lineIndex = 0;
       room.setStatus(PLANNING_LINES[0]);
       const ticker = setInterval(() => { lineIndex++; room.setStatus(PLANNING_LINES[lineIndex % PLANNING_LINES.length]); }, 2400);
@@ -665,6 +809,7 @@ async function runSwarm3D() {
         clearInterval(ticker);
         applyPlan(plan);
         setHudBrief('live Qwen plan');
+        postState('running', `${state.scenario.type} · ${money(state.budget)}`);
         room.begin(state.scenario, plan.events, { type: state.scenario.type, budget: state.budget });
       } catch (err) {
         clearInterval(ticker);
@@ -672,10 +817,12 @@ async function runSwarm3D() {
         room.setStatus(`Live planning unavailable — showing the demo catalogue`);
         console.warn('Live planning failed:', err.message);
         await wait(1600);
+        postState('running', briefLine);
         room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget });
       }
     } else {
       setHudBrief('demo catalogue');
+      postState('running', briefLine);
       room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget });
     }
   }
@@ -734,8 +881,17 @@ async function runSwarm3D() {
     vrBtn.hidden = false;
     vrBtn.addEventListener('click', () => room.enterVR());
   }
-  document.querySelector('#xr-results').addEventListener('click', () => { room.dispose(); showResults(); });
+  document.querySelector('#xr-results').addEventListener('click', () => { cleanupHost(); room.dispose(); sfx.stopMusic(); showResults(); });
 }
 
-showBrief();
+// ---------------------------------------------------------------------------
+// Boot — support deep links straight to the mobile join screen.
+// ---------------------------------------------------------------------------
+
+const params = new URLSearchParams(location.search);
+if (location.hash.startsWith('#join') || params.has('join')) {
+  showJoin((params.get('join') || location.hash.split('=')[1] || '').toUpperCase().slice(0, 4));
+} else {
+  showLanding();
+}
 api.init();

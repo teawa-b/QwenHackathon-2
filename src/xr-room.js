@@ -1,22 +1,24 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { sfx } from './audio.js';
 
-const INK = 0x07110e, LIME = 0xb8f632, MINT = 0x55e6b1, ORANGE = 0xff6b35;
-const SHELL = 0x8c9b91, FACE = 0xdce7dd, TRIM = 0x33423c;
-const ACCENTS = [LIME, MINT, LIME, MINT, ORANGE, MINT, LIME];
+// "Night ops" palette — matches the web app: deep navy, amber signal, cobalt action.
+const INK = 0x0d1424, AMBER = 0xe8a33d, COBALT = 0x5c7cff, CORAL = 0xff7a5c, TEALC = 0x46c8b4;
+const SHELL = 0x93a0b5, FACE = 0xe8ecf4, TRIM = 0x39445c;
+const ACCENTS = [COBALT, TEALC, AMBER, COBALT, CORAL, TEALC, AMBER];
 
 function makeLabelSprite(code, name, accent) {
   const canvas = document.createElement('canvas');
   canvas.width = 512; canvas.height = 160;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(7,17,14,.82)';
+  ctx.fillStyle = 'rgba(13,20,36,.82)';
   ctx.fillRect(0, 0, 512, 160);
   ctx.strokeStyle = `#${accent.toString(16).padStart(6, '0')}`;
   ctx.globalAlpha = .55; ctx.lineWidth = 4; ctx.strokeRect(4, 4, 504, 152); ctx.globalAlpha = 1;
   ctx.fillStyle = `#${accent.toString(16).padStart(6, '0')}`;
   ctx.font = '700 64px sans-serif'; ctx.textAlign = 'center';
   ctx.fillText(code, 256, 74);
-  ctx.fillStyle = '#dce7dd'; ctx.font = '600 34px sans-serif';
+  ctx.fillStyle = '#e8ecf4'; ctx.font = '600 34px sans-serif';
   ctx.fillText(name.toUpperCase(), 256, 126);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -70,7 +72,13 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
   renderer.xr.enabled = true;
+  // Sharpness in VR: render at a higher framebuffer scale and disable fixed
+  // foveation, which otherwise blurs everything away from the lens centre.
+  renderer.xr.setFramebufferScaleFactor(1.2);
+  renderer.xr.setFoveation(0);
   container.appendChild(renderer.domElement);
   renderer.domElement.style.touchAction = 'none';
 
@@ -84,35 +92,35 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   rig.add(camera);
   scene.add(rig);
 
-  scene.add(new THREE.HemisphereLight(0x27362e, 0x040a07, 1.4));
-  const key = new THREE.DirectionalLight(0xe8f5e0, 1.5);
+  scene.add(new THREE.HemisphereLight(0x2a3450, 0x05070f, 1.4));
+  const key = new THREE.DirectionalLight(0xe8ecf7, 1.5);
   key.position.set(3, 6, 4); scene.add(key);
-  const hubLight = new THREE.PointLight(LIME, 8, 9); hubLight.position.set(0, 2.4, 0); scene.add(hubLight);
+  const hubLight = new THREE.PointLight(AMBER, 8, 9); hubLight.position.set(0, 2.4, 0); scene.add(hubLight);
 
   // Floor
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(15, 48), new THREE.MeshStandardMaterial({ color: 0x0a1410, roughness: .9 }));
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(15, 48), new THREE.MeshStandardMaterial({ color: 0x0a101f, roughness: .9 }));
   floor.rotation.x = -Math.PI / 2; scene.add(floor);
-  const grid = new THREE.GridHelper(30, 34, 0x1d2c24, 0x101c16);
+  const grid = new THREE.GridHelper(30, 34, 0x232f4a, 0x141c30);
   grid.position.y = 0.005; scene.add(grid);
   for (const [radius, opacity] of [[2.9, .5], [0.85, .8]]) {
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(radius, radius + 0.045, 64),
-      new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity, side: THREE.DoubleSide })
+      new THREE.MeshBasicMaterial({ color: AMBER, transparent: true, opacity, side: THREE.DoubleSide })
     );
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.01; scene.add(ring);
   }
 
   // Coordinator — the robot you hold and talk to
-  const coordinator = buildBot(LIME, 1.15);
+  const coordinator = buildBot(AMBER, 1.15);
   scene.add(coordinator);
-  const hubLabel = makeLabelSprite('HUB', 'Coordinator', LIME);
+  const hubLabel = makeLabelSprite('HUB', 'Coordinator', AMBER);
   hubLabel.position.set(0, 2.45, 0); scene.add(hubLabel);
   const hubAnchor = new THREE.Vector3(0, 1.15, 0);
 
   // Listening halo shown while the mic is open
   const halo = new THREE.Mesh(
     new THREE.RingGeometry(0.62, 0.7, 48),
-    new THREE.MeshBasicMaterial({ color: MINT, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })
+    new THREE.MeshBasicMaterial({ color: TEALC, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })
   );
   halo.rotation.x = -Math.PI / 2; halo.position.y = 0.05; scene.add(halo);
 
@@ -130,6 +138,28 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   board.rotation.x = 0.06;
   scene.add(board);
 
+  // Floating join-code panel so headset users can read the code anywhere in the room
+  let codeSprite = null;
+  function showCodePanel(code) {
+    if (codeSprite) { scene.remove(codeSprite); codeSprite.material.map.dispose(); codeSprite.material.dispose(); }
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 224;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(13,20,36,.88)'; ctx.fillRect(0, 0, 512, 224);
+    ctx.strokeStyle = 'rgba(232,163,61,.65)'; ctx.lineWidth = 5; ctx.strokeRect(5, 5, 502, 214);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8d97ad'; ctx.font = '700 30px sans-serif';
+    ctx.fillText('JOIN ON MOBILE', 256, 62);
+    ctx.fillStyle = '#e8a33d'; ctx.font = '700 104px sans-serif';
+    ctx.fillText(code.split('').join(' '), 256, 172);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    codeSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+    codeSprite.scale.set(1.5, 0.65, 1);
+    codeSprite.position.set(2.1, 1.7, -1.4);
+    scene.add(codeSprite);
+  }
+
   // Run state — nothing plays until begin() is called
   let specialists = [];
   let events = [];
@@ -139,50 +169,55 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   let listening = false;
   let statusText = 'HOLD ME AND SPEAK — OR TYPE YOUR BRIEF BELOW';
   let briefLine = brief ? `${brief.type.toUpperCase()} · ${money(brief.budget)}` : 'AWAITING YOUR BRIEF';
+  let sessionCode = null;
   const rows = [];
   let phaseLabel = 'AWAITING YOUR BRIEF', progress = 0;
 
   function drawBoard() {
     const ctx = boardCtx;
     ctx.clearRect(0, 0, 1024, 576);
-    ctx.fillStyle = 'rgba(6,14,11,.94)'; ctx.fillRect(0, 0, 1024, 576);
-    ctx.strokeStyle = 'rgba(184,246,50,.5)'; ctx.lineWidth = 3; ctx.strokeRect(6, 6, 1012, 564);
+    ctx.fillStyle = 'rgba(13,20,36,.94)'; ctx.fillRect(0, 0, 1024, 576);
+    ctx.strokeStyle = 'rgba(232,163,61,.5)'; ctx.lineWidth = 3; ctx.strokeRect(6, 6, 1012, 564);
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#b8f632'; ctx.font = '700 30px sans-serif';
+    ctx.fillStyle = '#e8a33d'; ctx.font = '700 30px sans-serif';
     ctx.fillText(timelineStart >= 0 ? 'SWARM OPERATIONS · LIVE' : 'SUPPLYSWARM OPS ROOM', 40, 62);
-    ctx.fillStyle = '#8d9992'; ctx.font = '600 24px sans-serif';
+    ctx.fillStyle = '#8d97ad'; ctx.font = '600 24px sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(briefLine, 984, 62);
     ctx.textAlign = 'left';
-    ctx.strokeStyle = 'rgba(238,240,232,.16)'; ctx.beginPath(); ctx.moveTo(40, 86); ctx.lineTo(984, 86); ctx.stroke();
+    ctx.strokeStyle = 'rgba(232,236,244,.16)'; ctx.beginPath(); ctx.moveTo(40, 86); ctx.lineTo(984, 86); ctx.stroke();
     if (timelineStart < 0) {
       // Idle: invite the user to talk to the coordinator
       ctx.textAlign = 'center';
-      ctx.fillStyle = listening ? '#55e6b1' : '#eef0e8';
+      ctx.fillStyle = listening ? '#46c8b4' : '#e8ecf4';
       ctx.font = '700 52px sans-serif';
       ctx.fillText(listening ? '● LISTENING…' : 'TALK TO ME', 512, 268);
-      ctx.fillStyle = '#8d9992'; ctx.font = '500 27px sans-serif';
+      ctx.fillStyle = '#8d97ad'; ctx.font = '500 27px sans-serif';
       const lines = statusText.length > 52
         ? [statusText.slice(0, statusText.lastIndexOf(' ', 52)), statusText.slice(statusText.lastIndexOf(' ', 52) + 1)]
         : [statusText];
       lines.forEach((line, i) => ctx.fillText(line, 512, 330 + i * 38));
-      ctx.fillStyle = '#5f6c64'; ctx.font = '600 20px sans-serif';
-      ctx.fillText('TELL ME YOUR BUSINESS, BUDGET AND LOCATION', 512, 500);
+      ctx.fillStyle = '#626d84'; ctx.font = '600 20px sans-serif';
+      ctx.fillText('TELL ME YOUR BUSINESS, BUDGET AND LOCATION', 512, 448);
+      if (sessionCode) {
+        ctx.fillStyle = '#e8a33d'; ctx.font = '700 30px sans-serif';
+        ctx.fillText(`JOIN ON MOBILE · CODE  ${sessionCode.split('').join(' ')}`, 512, 512);
+      }
       ctx.textAlign = 'left';
     } else {
       let y = 136;
       for (const row of rows.slice(-6)) {
-        ctx.fillStyle = row.warning ? '#ff966e' : '#55e6b1';
+        ctx.fillStyle = row.warning ? '#ff966e' : '#46c8b4';
         ctx.font = '700 26px sans-serif';
         ctx.fillText(row.who.toUpperCase(), 40, y);
-        ctx.fillStyle = '#c8d2ca'; ctx.font = '400 25px sans-serif';
+        ctx.fillStyle = '#aab3c6'; ctx.font = '400 25px sans-serif';
         ctx.fillText(row.text.length > 62 ? row.text.slice(0, 61) + '…' : row.text, 240, y);
         y += 56;
       }
-      ctx.fillStyle = finished ? '#b8f632' : '#eef0e8'; ctx.font = '700 30px sans-serif';
+      ctx.fillStyle = finished ? '#e8a33d' : '#e8ecf4'; ctx.font = '700 30px sans-serif';
       ctx.fillText(finished ? 'PACKAGE APPROVED — YOUR LAUNCH PLAN IS READY' : phaseLabel, 40, 514);
-      ctx.fillStyle = 'rgba(184,246,50,.18)'; ctx.fillRect(40, 532, 944, 12);
-      ctx.fillStyle = '#b8f632'; ctx.fillRect(40, 532, 944 * progress / 100, 12);
+      ctx.fillStyle = 'rgba(232,163,61,.18)'; ctx.fillRect(40, 532, 944, 12);
+      ctx.fillStyle = '#e8a33d'; ctx.fillRect(40, 532, 944 * progress / 100, 12);
     }
     boardTexture.needsUpdate = true;
   }
@@ -209,6 +244,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     if (raycaster.intersectObject(coordinator, true).length) {
       holding = true;
       controls.enabled = false;
+      sfx.play('hold', 0.55);
       callbacks.onHoldStart?.();
       e.preventDefault();
     }
@@ -217,6 +253,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     if (!holding) return;
     holding = false;
     if (!renderer.xr.isPresenting) controls.enabled = true;
+    sfx.play('release', 0.5);
     callbacks.onHoldEnd?.();
   }
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -236,19 +273,21 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     const controller = event.target;
     if (!controllerHitsCoordinator(controller)) return;
     controller.userData.holdingCoordinator = true;
+    sfx.play('hold', 0.55);
     callbacks.onHoldStart?.();
   };
   const onSelectEnd = event => {
     const controller = event.target;
     if (!controller.userData.holdingCoordinator) return;
     controller.userData.holdingCoordinator = false;
+    sfx.play('release', 0.5);
     callbacks.onHoldEnd?.();
   };
   const controllers = [0, 1].map(index => {
     const controller = renderer.xr.getController(index);
     const ray = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
-      new THREE.LineBasicMaterial({ color: MINT, transparent: true, opacity: 0.5 })
+      new THREE.LineBasicMaterial({ color: COBALT, transparent: true, opacity: 0.5 })
     );
     ray.scale.z = 6;
     controller.add(ray);
@@ -278,13 +317,8 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         callbacks.onXRChange?.(false);
         if (finished) callbacks.onFinished?.();
       });
-      const gl = renderer.getContext();
-      session.updateRenderState({
-        baseLayer: new XRWebGLLayer(session, gl, {
-          framebufferScaleFactor: XRWebGLLayer.getNativeFramebufferScaleFactor(session),
-          antialias: true
-        })
-      });
+      // three.js creates its own base layer using the framebuffer scale factor
+      // configured above — setting one manually here would fight it.
       renderer.xr.setReferenceSpaceType('local-floor');
       await renderer.xr.setSession(session);
       controls.enabled = false;
@@ -345,9 +379,13 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       s.spawnedAt = elapsed; s.active = true;
       s.bot.visible = true; s.label.visible = true;
       s.link.material.opacity = .3;
+      sfx.play('spawn', 0.5);
+    } else {
+      sfx.play('event', 0.3);
     }
     if (i === events.length - 1) {
       finished = true;
+      sfx.play('complete', 0.65);
       setTimeout(() => { if (!xrSession) callbacks.onFinished?.(); }, 1500);
     }
     drawBoard();
@@ -423,6 +461,11 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     setStatus(text) {
       if (timelineStart >= 0) return;
       statusText = String(text).toUpperCase();
+      drawBoard();
+    },
+    setSessionCode(code) {
+      sessionCode = String(code).toUpperCase();
+      showCodePanel(sessionCode);
       drawBoard();
     },
     setListening(value) {

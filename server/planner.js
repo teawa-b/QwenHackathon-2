@@ -35,7 +35,7 @@ Given the user's business brief, respond with ONLY a JSON object matching this e
   "team_size": <integer, 1 if unclear>,
   "budget_gbp": <number, the equipment budget in GBP>,
   "agents": [ { "code": "3-4 letter code", "name": "one word role", "focus": "3-5 word focus" } ],
-  "items": [ { "title": "equipment name", "detail": "quantity and short spec, e.g. '4 units · 32GB RAM'", "quantity": <integer>, "price_gbp": <number, TOTAL estimated price for that line in GBP>, "priority": "Essential" | "Useful" | "Later", "evidence": "short label, e.g. 'Typical market price'" } ],
+  "items": [ { "title": "equipment name", "detail": "quantity and short spec, e.g. '4 units · 32GB RAM'", "quantity": <integer>, "price_gbp": <number, TOTAL estimated price for that line in GBP>, "priority": "Essential" | "Useful" | "Later", "evidence": "short label, e.g. 'Typical market price'", "alibaba_query": "2-5 word Alibaba.com search phrase that finds this exact product category, e.g. 'commercial half rack gym'" } ],
   "events": [ { "who": "agent name or 'Coordinator' or 'Critic'", "text": "one-line status a robot would announce, max 90 chars" } ],
   "risks": [ "one-line risk" ],
   "assumptions": [ "one-line assumption" ]
@@ -60,6 +60,10 @@ Respond with ONLY a JSON object:
 }
 The sum of item prices must be at most 82% of the budget.`;
 
+export function alibabaSearchUrl(query) {
+  return `https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent(String(query || '').trim())}`;
+}
+
 function cleanItems(rawItems) {
   if (!Array.isArray(rawItems)) return [];
   return rawItems
@@ -69,7 +73,8 @@ function cleanItems(rawItems) {
       quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
       price_gbp: Math.max(0, Math.round(Number(item.price_gbp) || 0)),
       priority: ['Essential', 'Useful', 'Later'].includes(item.priority) ? item.priority : 'Essential',
-      evidence: String(item.evidence || 'Qwen estimate').slice(0, 40)
+      evidence: String(item.evidence || 'Qwen estimate').slice(0, 40),
+      alibaba_url: alibabaSearchUrl(item.alibaba_query || item.title)
     }))
     .filter(item => item.title && item.price_gbp > 0);
 }
@@ -182,7 +187,7 @@ export async function createPlan(text) {
     team_size: Math.max(1, Math.round(Number(raw.team_size) || 1)),
     budget_gbp: budget,
     agents,
-    items: items.map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence]),
+    items: items.map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.alibaba_url]),
     events: timeline,
     risks,
     assumptions: (raw.assumptions || []).map(String).slice(0, 5),
