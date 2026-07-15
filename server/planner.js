@@ -9,7 +9,10 @@ const PRODUCT_BUDGET_RATIO = 0.82; // leave headroom for shipping/tax/contingenc
 // A package that uses less than this share of the ceiling is treated as an
 // underspend conflict: the user asked for a launch at THIS budget, not a
 // fraction of it, so the Critic runs an upgrade round.
-const UNDERSPEND_RATIO = 0.72;
+const UNDERSPEND_RATIO = 0.9;
+// Where an upgrade round should land the product subtotal (shipping, tax and
+// contingency on top bring the landed total to ~97-100% of the ceiling).
+const UPGRADE_FLOOR_RATIO = 0.78;
 
 export function landedCost(items, budget) {
   // price_gbp is the total for the whole line, not a unit price.
@@ -84,7 +87,7 @@ Respond with ONLY a JSON object:
 }
 
 Rules:
-- 1 to 3 items. The SUM of your price_gbp values must be at most £${lineBudget} — and this budget was allocated to be SPENT: aim for 80-100% of it with properly specced equipment, not bargain-bin substitutes that leave most of it unused.
+- 1 to 3 items. The SUM of your price_gbp values must be at most £${lineBudget} — and this budget was allocated to be SPENT. Target 90-100% of £${lineBudget}: choose properly specced, durable commercial-grade equipment and realistic quantities. A total under 75% of your allocation is a FAILED mission unless nothing better exists.
 - Marketplace prices are often per-unit and in USD — multiply by quantity and convert.
 - If search returned nothing usable for a line, still include a realistic estimated line with "url": null and evidence "Estimate — no live listing found".`;
 
@@ -97,7 +100,7 @@ Respond with ONLY a JSON object:
     { "title": "...", "detail": "quantity and short spec", "quantity": <integer>, "price_gbp": <number, TOTAL for the line in GBP>, "priority": "Essential" | "Useful" | "Later", "url": "alibaba.com or aliexpress.com listing URL from your search results or null", "supplier": "seller name or null", "evidence": "short label" }
   ]
 }
-Rules: 5 to 9 items covering everything essential to launch. The sum of price_gbp must be at most ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of £${budget}, and should USE most of that allowance.`;
+Rules: 5 to 9 items covering everything essential to launch. The sum of price_gbp must be at most ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of £${budget} and should land at 90-100% of that allowance — the budget exists to be spent on the best launch the money buys.`;
 
 const REVISE_SYSTEM = `You are the Critic agent of SupplySwarm. A procurement package sourced from live Alibaba searches exceeded budget after landed costs were calculated deterministically. Revise the item list to bring it under budget while keeping every Essential capability (reduce quantities, move nice-to-haves to "Later", or cut lines).
 
@@ -121,7 +124,7 @@ Respond with ONLY a JSON object:
   "revision_note": "one line, max 90 chars, describing the upgrade made",
   "messages": [ { "to": "name of the specialist agent whose line you changed", "text": "max 80 chars, what you told them and why" } ]
 }
-The sum of item prices should land between ${Math.round(UNDERSPEND_RATIO * 100)}% and ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of the budget — never above ${Math.round(PRODUCT_BUDGET_RATIO * 100)}%. 3 to 9 items. 0 to 2 messages.`;
+The sum of item prices should land between ${Math.round(UPGRADE_FLOOR_RATIO * 100)}% and ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of the budget — as close to ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% as sensible, never above it. 3 to 9 items. 0 to 2 messages.`;
 
 const MARKETPLACE_HOST = /(^|\.)(alibaba|aliexpress)\.com$/i;
 
@@ -421,7 +424,7 @@ export async function createPlan(text) {
   // package leaves most of the ceiling unused, the Critic upgrades quantities
   // and spec toward the ceiling instead of quietly handing back a cheap plan.
   let upgraded = false;
-  if (cost.valid && cost.total < budget * UNDERSPEND_RATIO) {
+  for (let round = 0; round < 2 && cost.valid && cost.total < budget * UNDERSPEND_RATIO; round++) {
     events.push({
       who: 'Critic', to: 'Swarm',
       text: `Underspend conflict: only £${cost.total.toLocaleString('en-GB')} of the £${budget.toLocaleString('en-GB')} ceiling is used. Upgrading the package.`
@@ -457,12 +460,14 @@ export async function createPlan(text) {
           who: 'Critic', to: 'Coordinator',
           text: 'Upgrade draft rejected by the validators — keeping the verified conservative package.'
         });
+        break;
       }
     } catch {
       events.push({
         who: 'Critic', to: 'Coordinator',
         text: 'Upgrade pass failed — keeping the conservative package. Budget headroom remains.'
       });
+      break;
     }
   }
 
@@ -471,6 +476,10 @@ export async function createPlan(text) {
     text: cost.valid
       ? 'All essential capabilities fit the landed-cost budget. Evidence labels verified.'
       : 'Budget risk remains after revision — review the trade-offs before purchasing.'
+  });
+  events.push({
+    who: 'Coordinator', to: 'Swarm',
+    text: 'Design pass: rendering a concept visual of the finished space for your PDF report…'
   });
   events.push({
     who: 'Coordinator', to: 'Swarm',
@@ -497,7 +506,7 @@ export async function createPlan(text) {
       // The control's full package rides along so the user can inspect what
       // the solo agent actually proposed, not just its score.
       singleItems = baselineItems.slice(0, 9)
-        .map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier]);
+        .map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier, null, item.quantity]);
     }
   }
   const comparison = {
@@ -541,7 +550,7 @@ export async function createPlan(text) {
     team_size: Math.max(1, Math.round(Number(raw.team_size) || 1)),
     budget_gbp: budget,
     agents,
-    items: items.map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier, item.agent]),
+    items: items.map(item => [item.title, item.detail, item.price_gbp, item.priority, item.evidence, item.url, item.supplier, item.agent, item.quantity]),
     events: timeline,
     risks,
     assumptions: (raw.assumptions || []).map(String).slice(0, 5),

@@ -125,6 +125,12 @@ function marketplaceLabel(url) {
   } catch { return 'LIVE LISTING'; }
 }
 
+// Every product line links out: to the verified live listing when one
+// survived verification, otherwise to a live Alibaba search for the product.
+const alibabaSearchUrl = query => `https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent(query)}`;
+const itemUrl = item => item[5] || alibabaSearchUrl(item[0]);
+const itemLinkTag = item => item[5] ? marketplaceLabel(item[5]) : 'SEARCH ALIBABA';
+
 function applyPlan(plan) {
   state.plan = plan;
   state.budget = plan.budget_gbp;
@@ -149,45 +155,38 @@ function header() {
 
 function briefView() {
   return `${header()}
-  <main class="brief-shell">
-    <section class="hero-copy">
-      <div class="eyebrow"><span>01</span> Procurement, assembled</div>
-      <h1>Build the business.<br><strong>We’ll source the rest.</strong></h1>
-      <p>Describe your idea. A society of specialist agents will turn it into an evidence-led equipment and supplier plan—without crossing your budget.</p>
-    </section>
-    <section class="command-card">
-      <div class="robot-stage" aria-hidden="true">
-        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
-        <div class="bot-shadow"></div>
-        <div class="bot">
-          <div class="antenna"><span></span></div><div class="ear left"></div><div class="ear right"></div>
-          <div class="face"><b></b><b></b><div class="mouth"></div></div>
-          <div class="body"><span class="core"></span></div>
-        </div>
-        <div class="signal signal-a">£</div><div class="signal signal-b">✓</div><div class="signal signal-c">⌁</div>
-      </div>
-      <div class="prompt-area">
-        <div class="prompt-label"><span class="live-dot"></span> Coordinator online</div>
-        <label for="idea">What business are you building?</label>
-        <div class="input-wrap">
-          <textarea id="idea" rows="3" maxlength="280" placeholder="Tell us what you're building, where, your budget, and roughly how many people it needs to support."></textarea>
-          <button class="voice" type="button" data-voice aria-label="${api.live ? 'Speak your business brief' : 'Voice input unavailable in demo mode'}" title="${api.live ? 'Speak your brief — transcribed by Qwen ASR' : 'Voice input activates when Qwen Cloud is connected'}">⌁</button>
-        </div>
-        <div class="examples" aria-label="Example briefs">
-          <button data-example="studio">Game studio · £10k</button>
-          <button data-example="gym">Small gym · £15k</button>
-          <button data-example="podcast">Podcast room · £5k</button>
-        </div>
-        <button class="assemble" data-start><span>Assemble my swarm</span><b>↗</b></button>
-        <button class="assemble xr-launch" data-start-3d><span>Enter the 3D ops room · VR</span><b>◈</b></button>
-        <p class="fineprint">No purchases or supplier messages are sent. Every consequential action requires your approval.</p>
-        <a class="pair-link" href="/connect">Have a session code from a VR headset? <b>Pair this device →</b></a>
-      </div>
-    </section>
-    <section class="proof-strip">
-      <div><b>06</b><span>Specialist agents</span></div><div><b>01</b><span>Shared budget</span></div><div><b>100%</b><span>Evidence labelled</span></div>
-      <p>Powered by <strong>Qwen Cloud</strong><br><span data-live-copy>${api.live ? 'Live planning · Qwen speech recognition' : 'Demo catalogue · add a Qwen key for live voice'}</span></p>
-    </section>
+  <main class="landing">
+    <div class="landing-bg" aria-hidden="true">
+      <svg class="lbg lbg-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="10" rx="3"/><circle cx="9.5" cy="12.5" r="1"/><circle cx="14.5" cy="12.5" r="1"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1"/><path d="M9 15.5h6"/></svg>
+      <svg class="lbg lbg-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5"/><path d="M12 12v9"/></svg>
+      <svg class="lbg lbg-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-3l-2.5-2h-3L8 16H5a2 2 0 01-2-2v-4z"/><circle cx="8" cy="12" r="1.2"/><circle cx="16" cy="12" r="1.2"/></svg>
+      <svg class="lbg lbg-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 3.4l7.5 7.5a2 2 0 010 2.8l-6.4 6.4a2 2 0 01-2.8 0l-7.5-7.5V5.4a2 2 0 012-2h7.2z"/><circle cx="8.5" cy="8.5" r="1.4"/></svg>
+      <svg class="lbg lbg-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M9 9h6M9 12.5h6M9 16h3.5"/></svg>
+      <svg class="lbg lbg-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.3 4 5.2 4 8.5s-1.4 6.2-4 8.5c-2.6-2.3-4-5.2-4-8.5s1.4-6.2 4-8.5z"/></svg>
+    </div>
+    <div class="landing-head">
+      <div class="eyebrow"><span>SUPPLYSWARM</span> Procurement, assembled</div>
+      <h1>Say what you want to build.<br><strong>A swarm sources it.</strong></h1>
+      <p class="landing-desc">Speak your idea in VR — a team of AI agents searches Alibaba live, fits your budget, and hands you a launch plan as a PDF on your phone.</p>
+    </div>
+    <div class="doors">
+      <section class="door door-vr">
+        <div class="door-tag">HEADSET / DESKTOP</div>
+        <h2>Use in VR</h2>
+        <p>Enter the 3D operations room. Hold the coordinator robot, speak your business brief, and watch the specialist swarm assemble around you. Works in passthrough AR too.</p>
+        <button class="assemble" data-start-3d><span>USE IN VR</span><b>◈</b></button>
+        <em>Also works on desktop — drag to orbit, hold the robot to talk, tap any robot to inspect it.</em>
+      </section>
+      <section class="door door-mobile">
+        <div class="door-tag">PHONE</div>
+        <h2>Join session on mobile</h2>
+        <p>Enter the code shown inside the VR room. Follow the swarm live, message any agent from your phone, and receive the finished plan as a PDF.</p>
+        <a class="assemble mobile-join" href="/connect"><span>JOIN SESSION ON MOBILE</span><b>↗</b></a>
+        <em>Live agent feed, concept image, verified Alibaba links, downloadable PDF.</em>
+      </section>
+    </div>
+    ${recentsSection()}
+    <p class="fineprint landing-fine">No purchases or supplier messages are ever sent. Every consequential action requires your approval. <span data-live-copy>${api.live ? 'Live planning · Qwen Cloud connected.' : 'Running on the demo catalogue.'}</span></p>
   </main>`;
 }
 
@@ -266,7 +265,7 @@ function resultsView() {
         </div>
         ${cmp.single_items?.length ? `<details class="single-package">
           <summary>View the single agent's full package (${cmp.single_items.length} items)</summary>
-          <div class="items">${cmp.single_items.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[5] ? `<a href="${item[5]}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a>` : item[0]}</h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span>${item[5] ? `<span class="tag-link">${marketplaceLabel(item[5])}</span>` : ''}</div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+          <div class="items">${cmp.single_items.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3><a href="${itemUrl(item)}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a></h3><p>${item[8] > 1 ? `Qty ${item[8]} · ` : ''}${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span><span class="tag-link">${itemLinkTag(item)}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
         </details>` : ''}
       </section>` : '';
   const insight = plan
@@ -294,7 +293,7 @@ function resultsView() {
     <section class="result-grid">
       <div class="package-card">
         <div class="package-head"><div><span>RECOMMENDED PACKAGE</span><h2>Launch-ready essentials</h2></div><button data-restart>New brief</button></div>
-        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3>${item[5] ? `<a href="${item[5]}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a>` : item[0]}</h3><p>${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span>${item[5] ? `<span class="tag-link">${marketplaceLabel(item[5])}</span>` : ''}</div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
+        <div class="items">${adjusted.map((item, i) => `<article class="product"><span class="item-no">${String(i + 1).padStart(2, '0')}</span><div><h3><a href="${itemUrl(item)}" target="_blank" rel="noopener noreferrer">${item[0]} ↗</a></h3><p>${item[8] > 1 ? `Qty ${item[8]} · ` : ''}${item[1]}${item[6] ? ` · ${item[6]}` : ''}</p><div class="tags"><span>${item[3]}</span><span>${item[4]}</span><span class="tag-link">${itemLinkTag(item)}</span></div></div><strong>${money(item[2])}</strong></article>`).join('')}</div>
       </div>
       <aside class="cost-card">
         <span class="label">LANDED COST ESTIMATE</span><div class="total"><small>Package total</small><strong>${money(total)}</strong><span>of ${money(state.budget)}</span></div>
@@ -305,8 +304,115 @@ function resultsView() {
       </aside>
     </section>
     ${insight}
-    <section class="result-actions">${plan ? '<button class="primary" data-download-pdf><span>Download PDF report</span><b>↓</b></button>' : ''}<button class="secondary" onclick="window.print()">Print report</button><button class="${plan ? 'secondary' : 'primary'}" data-restart><span>Start another plan</span><b>↗</b></button></section>
+    <section class="result-actions"><button class="primary" data-download-pdf><span>Download PDF report</span><b>↓</b></button><button class="secondary" onclick="window.print()">Print report</button><button class="secondary" data-restart><span>Start another plan</span><b>↗</b></button></section>
   </main>`;
+}
+
+// ---------------------------------------------------------------------------
+// Recent swarms — finished runs cached on this device (localStorage) so the
+// user can reopen the final plan instantly instead of regenerating it.
+// ---------------------------------------------------------------------------
+
+const RECENTS_KEY = 'supplyswarm.recent';
+
+function loadRecents() {
+  try { return JSON.parse(localStorage.getItem(RECENTS_KEY)) || []; } catch { return []; }
+}
+
+function persistRecents(list) {
+  try { localStorage.setItem(RECENTS_KEY, JSON.stringify(list)); return true; } catch { return false; }
+}
+
+async function saveRecentSwarm() {
+  if (state.savedRunId) return; // this run is already cached
+  state.savedRunId = Date.now();
+  const s = state.scenario;
+  // Qwen image URLs expire within a day — cache the pixels, not the link.
+  let image = state.conceptImage || null;
+  if (image && !String(image).startsWith('data:')) {
+    try {
+      const response = await fetch(`/api/image-proxy?url=${encodeURIComponent(image)}`);
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size < 900_000) {
+          image = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(new Error('read failed'));
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch { /* keep the URL; better than nothing while it lasts */ }
+  }
+  const entry = {
+    id: state.savedRunId, ts: Date.now(),
+    plan: state.plan,
+    scenario: { type: s.type, team: s.team, agents: s.agents, items: s.items },
+    budget: state.budget, city: state.city, team: state.team,
+    image
+  };
+  let list = [entry, ...loadRecents().filter(other => other.id !== entry.id)].slice(0, 8);
+  if (!persistRecents(list)) {
+    // Storage quota hit — drop cached images, then oldest entries.
+    list = list.map(other => ({ ...other, image: other.image?.startsWith('data:') ? null : other.image }));
+    if (!persistRecents(list)) persistRecents(list.slice(0, 3));
+  }
+}
+
+function openRecent(id) {
+  const entry = loadRecents().find(other => other.id === id);
+  if (!entry) return;
+  state.plan = entry.plan || null;
+  state.scenario = entry.scenario;
+  state.budget = entry.budget;
+  state.city = entry.city;
+  state.team = entry.team;
+  state.conceptImage = entry.image || null;
+  state.savedRunId = entry.id; // reopening must not re-save a duplicate
+  showResults();
+}
+
+function recentsSection() {
+  const recents = loadRecents();
+  if (!recents.length) return '';
+  return `<section class="recents">
+    <div class="recents-head"><h2>Recent swarms</h2><button class="linklike" data-clear-recents>Clear all</button></div>
+    <div class="recent-list">${recents.map(entry => `
+      <button class="recent-card" data-recent="${entry.id}">
+        ${entry.image ? `<img src="${entry.image}" alt="">` : '<span class="recent-thumb" aria-hidden="true">◈</span>'}
+        <span class="recent-info"><strong>${entry.scenario?.type || 'Launch plan'}</strong><em>${entry.city || 'United Kingdom'} · ${money(entry.budget)} · ${new Date(entry.ts).toLocaleDateString('en-GB')}</em></span>
+        <b>→</b>
+      </button>`).join('')}</div>
+    <p class="fineprint">Saved on this device only — open one to jump straight to its finished plan and PDF.</p>
+  </section>`;
+}
+
+// Demo-catalogue plan payload for the PDF when no live plan exists — same
+// scaling maths as resultsView, honestly labelled as demo data.
+function buildDemoPlan() {
+  const s = state.scenario;
+  const rawProducts = s.items.reduce((n, item) => n + item[2], 0);
+  const rawShipping = Math.round(rawProducts * 0.075);
+  const rawTax = Math.round((rawProducts + rawShipping) * 0.08);
+  const rawContingency = Math.round(rawProducts * 0.05);
+  const rawTotal = rawProducts + rawShipping + rawTax + rawContingency;
+  const scale = rawTotal > state.budget ? (state.budget * .965) / rawTotal : 1;
+  const items = s.items.map(item => [item[0], item[1], Math.round(item[2] * scale), item[3], item[4], null, null, null, null]);
+  const products = items.reduce((n, item) => n + item[2], 0);
+  const shipping = Math.round(rawShipping * scale), tax = Math.round(rawTax * scale), contingency = Math.round(rawContingency * scale);
+  const total = products + shipping + tax + contingency;
+  return {
+    live: false,
+    business_type: s.type,
+    city: state.city,
+    team_size: state.team,
+    budget_gbp: state.budget,
+    items,
+    landed_cost: { products, shipping, tax, contingency, total, budget: state.budget, remaining: state.budget - total, valid: total <= state.budget },
+    risks: ['Demo catalogue prices are indicative samples, not live marketplace data.', 'Final landed costs change with shipping, VAT, duties and supplier pricing.'],
+    assumptions: ['Add a Qwen Cloud key for live Alibaba sourcing with verified listing links.']
+  };
 }
 
 function showBrief() {
@@ -314,29 +420,16 @@ function showBrief() {
 }
 
 function bindBrief() {
-  document.querySelectorAll('[data-example]').forEach(btn => btn.addEventListener('click', () => {
-    const copy = { studio: 'I want to start a four-person game development studio in Coventry with a £10,000 equipment budget for PC and VR games.', gym: 'I want to open a small training gym in Birmingham with a £15,000 equipment budget.', podcast: 'I need a four-person podcast production room in Manchester with a £5,000 equipment budget.' };
-    document.querySelector('#idea').value = copy[btn.dataset.example];
-  }));
-  document.querySelector('[data-start]').addEventListener('click', () => {
-    const idea = document.querySelector('#idea');
-    const text = idea.value.trim();
-    if (!text) {
-      idea.setCustomValidity('Describe your business first, or choose an example brief.');
-      idea.reportValidity();
-      idea.focus();
-      return;
-    }
-    idea.setCustomValidity('');
-    parseBrief(text);
-    runSwarm(text);
-  });
-  // The 3D room always opens idle. A landing-page example must never start or
-  // prefill the room: the user talks to the coordinator (or types) from there.
+  // The landing offers exactly two doors. The 3D room always opens idle — the
+  // user talks to the coordinator (or types) from there; phones pair at /connect.
   document.querySelector('[data-start-3d]').addEventListener('click', () => runSwarm3D());
-  document.querySelector('#idea').addEventListener('input', event => event.currentTarget.setCustomValidity(''));
   document.querySelector('[data-about]').addEventListener('click', showAbout);
-  bindVoice();
+  document.querySelectorAll('[data-recent]').forEach(button =>
+    button.addEventListener('click', () => openRecent(Number(button.dataset.recent))));
+  document.querySelector('[data-clear-recents]')?.addEventListener('click', () => {
+    localStorage.removeItem(RECENTS_KEY);
+    showBrief();
+  });
 }
 
 function createVoiceRecorder() {
@@ -493,7 +586,7 @@ function showResults() {
 
 async function downloadReport(event) {
   const button = event.currentTarget;
-  if (!state.plan || button.disabled) return;
+  if (button.disabled) return;
   button.disabled = true;
   const label = button.querySelector('span');
   const original = label?.textContent;
@@ -501,7 +594,7 @@ async function downloadReport(event) {
   try {
     const { downloadPlanPdf } = await import('./pdf.js');
     await downloadPlanPdf(
-      state.plan,
+      state.plan || buildDemoPlan(),
       { type: state.scenario.type, city: state.city, budget: state.budget, team: state.team },
       state.conceptImage
     );
@@ -596,7 +689,7 @@ function startPlanningTicker() {
 
 async function runSwarm(text) {
   if (state.running) return; state.running = true;
-  state.plan = null; state.conceptImage = null;
+  state.plan = null; state.conceptImage = null; state.savedRunId = null; state.imagePromise = null;
   app.innerHTML = workspaceView(); window.scrollTo(0, 0);
   document.querySelector('[data-about]').addEventListener('click', showAbout);
   if (api.live && text) {
@@ -622,7 +715,7 @@ async function runSwarm(text) {
 
 async function runSwarm3D() {
   if (state.running) return;
-  state.plan = null; state.conceptImage = null;
+  state.plan = null; state.conceptImage = null; state.savedRunId = null; state.imagePromise = null;
   app.innerHTML = `${header()}
     <main class="xr-shell">
       <div class="xr-canvas" id="xr-canvas"></div>
@@ -693,10 +786,20 @@ async function runSwarm3D() {
     brief: null,
     phaseNames: PHASE_NAMES,
     money,
-    onComplete: () => {
-      live.send({ type: 'status', status: { text: 'Launch plan ready', phase: 'COMPLETE', progress: 100 } });
+    onComplete: async () => {
+      // Everything in the report — including the concept visual — must exist
+      // before we tell the user their plan is ready.
       const btn = document.querySelector('#xr-results');
-      if (btn) { btn.hidden = false; }
+      if (btn && state.imagePromise && !state.conceptImage) {
+        btn.hidden = false;
+        btn.disabled = true;
+        btn.textContent = 'Rendering concept visual…';
+        live.send({ type: 'status', status: { text: 'Rendering your concept visual…', phase: 'DESIGN PASS', progress: 99 } });
+        await Promise.race([state.imagePromise, wait(60000)]);
+      }
+      live.send({ type: 'status', status: { text: 'Launch plan ready', phase: 'COMPLETE', progress: 100 } });
+      if (btn) { btn.hidden = false; btn.disabled = false; btn.textContent = 'View launch plan ↗'; }
+      saveRecentSwarm();
     },
     onExit: null
   });
@@ -769,10 +872,11 @@ async function runSwarm3D() {
           status: { text: 'Specialists reporting in…', phase: 'RUNNING', progress: 8 }
         });
         live.send({ type: 'plan', plan });
-        // Concept image for the companion's PDF report (and the results page).
-        api.image({ business: plan.business_type, city: state.city, items: state.scenario.items.map(item => item[0]) })
-          .then(({ url }) => { state.conceptImage = url; live.send({ type: 'image', url }); })
-          .catch(() => {});
+        // Concept image for the PDF report and results page — started now so it
+        // is ready by the time the swarm finishes acting out the plan.
+        state.imagePromise = api.image({ business: plan.business_type, city: state.city, items: state.scenario.items.map(item => item[0]) })
+          .then(({ url }) => { state.conceptImage = url; live.send({ type: 'image', url }); return url; })
+          .catch(() => null);
         room.begin(state.scenario, plan.events, { type: state.scenario.type, budget: state.budget });
       } catch (err) {
         clearInterval(ticker);
