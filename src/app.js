@@ -165,15 +165,9 @@ function briefView() {
       <svg class="lbg lbg-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.3 4 5.2 4 8.5s-1.4 6.2-4 8.5c-2.6-2.3-4-5.2-4-8.5s1.4-6.2 4-8.5z"/></svg>
     </div>
     <div class="landing-head">
-      <div class="eyebrow"><span>SUPPLYSWARM</span> A procurement department, formed on demand</div>
+      <div class="eyebrow"><span>SUPPLYSWARM</span> Procurement, assembled</div>
       <h1>Say what you want to build.<br><strong>A swarm sources it.</strong></h1>
-      <p class="landing-desc">SupplySwarm turns a spoken business idea into a complete equipment plan. Describe your business and budget to the coordinator robot in VR; it assembles a team of specialist AI agents that search Alibaba live, price the package realistically, check it against your budget with real shipping and tax maths, and hand you a finished launch plan — with a concept image of your future space, verified product links for every item, and a PDF you can keep.</p>
-      <ul class="steps">
-        <li><b>1</b> Speak your brief in VR</li>
-        <li><b>2</b> Specialist agents search &amp; price</li>
-        <li><b>3</b> Critic checks the budget</li>
-        <li><b>4</b> PDF plan on your phone</li>
-      </ul>
+      <p class="landing-desc">Speak your idea in VR — a team of AI agents searches Alibaba live, fits your budget, and hands you a launch plan as a PDF on your phone.</p>
     </div>
     <div class="doors">
       <section class="door door-vr">
