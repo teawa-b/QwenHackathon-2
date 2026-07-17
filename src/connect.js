@@ -196,12 +196,13 @@ export function showConnect(app, prefillCode) {
     if (bar) bar.style.width = `${Math.max(2, Math.min(100, Number(status?.progress) || 0))}%`;
   }
 
-  function addFeedRow([who, text, , to], isRequest = false) {
+  function addFeedRow([who, text, , to, kind], isRequest = false) {
     const feed = app.querySelector('#c-feed');
     if (!feed) return;
+    const thinking = kind === 'think';
     const row = document.createElement('div');
-    row.className = `c-event${isRequest ? ' request' : ''}${/critic/i.test(String(who)) ? ' warning' : ''}`;
-    row.innerHTML = `<b>${esc(who)}${to ? ` → ${esc(to)}` : ''}</b><p>${esc(text)}</p>`;
+    row.className = `c-event${isRequest ? ' request' : ''}${/critic/i.test(String(who)) ? ' warning' : ''}${thinking ? ' thought' : ''}`;
+    row.innerHTML = `<b>${esc(who)}${thinking ? ' 💭' : to ? ` → ${esc(to)}` : ''}</b><p>${esc(text)}</p>`;
     feed.prepend(row);
     while (feed.children.length > 40) feed.lastChild.remove();
   }
@@ -257,6 +258,10 @@ export function showConnect(app, prefillCode) {
         ${cmp ? `<div class="results-compare">
           <div><div><span>SINGLE AGENT (CONTROL)</span><b>${cmp.single ? `${cmp.single.verified_links} live links` : 'Run failed'}</b></div><p>${cmp.single ? `${money(cmp.single.landed_total)} · ${cmp.single.budget_valid ? 'inside budget' : 'over budget'} · ${cmp.single.seconds}s` : 'No usable package'}</p></div>
           <div class="win"><div><span>SUPPLYSWARM</span><b>${cmp.swarm.verified_links} live links</b></div><p>${money(cmp.swarm.landed_total)} · ${cmp.swarm.budget_valid ? 'inside budget' : 'over budget'} · ${cmp.swarm.seconds}s</p></div>
+        </div>` : ''}
+        ${plan.conflicts?.length ? `<div class="results-conflicts">
+          <p class="c-label">Where the swarm disagreed</p>
+          ${plan.conflicts.map(conflict => `<div class="r-conflict"><b>${esc(conflict.between)}</b><p>${esc(conflict.issue)}</p><p class="res">${esc(conflict.resolution)}</p></div>`).join('')}
         </div>` : ''}
         <div class="results-items">${plan.items.map(item => `
           <div class="r-item">
