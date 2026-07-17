@@ -187,6 +187,47 @@ function cleanUrl(rawUrl, sources) {
   }
 }
 
+// Second verification tier: the search engine rarely returns raw alibaba.com
+// product URLs in search_info, so source-matching alone vetoed nearly every
+// cited link and packages shipped with "0 live links". A cited marketplace URL
+// that the sources cannot confirm is now checked against the live site instead
+// of being discarded — a link only survives if the page actually answers.
+const LINK_CHECK_TIMEOUT_MS = 8000;
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36';
+
+async function linkIsAlive(href) {
+  try {
+    const response = await fetch(href, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: AbortSignal.timeout(LINK_CHECK_TIMEOUT_MS),
+      headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html,*/*' }
+    });
+    response.body?.cancel?.().catch?.(() => {});
+    // 2xx/3xx = page exists. 403/405/429 = bot-blocked but the URL resolves —
+    // the marketplace answered for it, which a fabricated URL would not get.
+    return response.ok || [403, 405, 429].includes(response.status);
+  } catch {
+    return false;
+  }
+}
+
+/** Promote pending (cited-but-unmatched) URLs that pass a live HTTP check. */
+async function verifyPendingLinks(items) {
+  const pending = items.filter(item => !item.url && item.pendingUrl);
+  await Promise.all(pending.map(async item => {
+    if (await linkIsAlive(item.pendingUrl)) {
+      item.url = item.pendingUrl;
+      const marketplace = /(^|\.)aliexpress\.com/i.test(new URL(item.url).hostname) ? 'AliExpress' : 'Alibaba';
+      item.evidence = `${marketplace} listing — link checked`;
+    } else {
+      item.evidence = 'Estimate — cited link dead';
+    }
+  }));
+  for (const item of items) delete item.pendingUrl;
+  return items;
+}
+
 // The model often reports prices without citing the listing it read. Its own
 // search results are ground truth, so hand unlinked lines a real marketplace
 // URL the search genuinely returned — verified by construction, honestly
@@ -214,17 +255,19 @@ function cleanItems(rawItems, { sources = [], agentName = null, allowedUrls = nu
   return rawItems
     .map(item => {
       const link = item.url ? cleanUrl(item.url, sources) : null;
-      // Sourcing round: a link survives ONLY if it appeared in the agent's own
-      // search results — anything else is vetoed so no shown link can be fake.
-      // Revision round: only URLs that survived the sourcing round are trusted,
-      // and they keep the evidence label earned there.
+      // Sourcing round: a link survives if it appeared in the agent's own
+      // search results, or (pendingUrl) if a live HTTP check confirms the page
+      // exists — so no shown link can be fake. Revision round: only URLs that
+      // survived the sourcing round are trusted, keeping their earned label.
       let url = link?.href || null;
+      let pendingUrl = null;
       if (url && allowedUrls) url = allowedUrls.has(url) ? url : null;
-      else if (url && !link.verified) url = null;
+      else if (url && !link.verified) { pendingUrl = url; url = null; }
       let evidence = String(item.evidence || 'Qwen estimate').slice(0, 40);
       if (url) evidence = allowedUrls ? allowedUrls.get(url) : `Live ${link.marketplace} listing`;
-      else if (item.url) evidence = 'Estimate — link unverified';
+      else if (item.url && !pendingUrl) evidence = 'Estimate — link unverified';
       return {
+        pendingUrl,
         title: String(item.title || '').slice(0, 80),
         detail: String(item.detail || '').slice(0, 90),
         quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
@@ -345,21 +388,35 @@ export async function createPlan(text) {
 
   let items = [];
   let failedAgents = [];
-  specialists.forEach((agent, index) => {
+  // Where the swarm disagreed — every conflict and its resolution rides along
+  // into the report so the user can see the friction, not just the outcome.
+  const conflicts = [];
+  const results = specialists.map((agent, index) => {
     const mission = missions[index];
+    if (mission.status !== 'fulfilled') return { agent, mission, found: null, rawFound: [] };
+    const rawFound = Array.isArray(mission.value.json.items) ? mission.value.json.items : [];
+    const found = cleanItems(rawFound, { sources: mission.value.sources, agentName: agent.name });
+    return { agent, mission, found, rawFound };
+  });
+  // Supplier verification: source-matched links pass immediately; cited links
+  // the sources cannot confirm get one live HTTP check before any veto.
+  await Promise.all(results.filter(r => r.found).map(r => verifyPendingLinks(r.found)));
+  for (const { agent, mission, found, rawFound } of results) {
     events.push({
-      who: agent.name, to: 'Coordinator',
+      kind: 'think', who: agent.name, to: 'Coordinator',
       text: `Searching Alibaba.com: "${agent.query}"…`
     });
-    if (mission.status === 'fulfilled') {
-      const rawFound = Array.isArray(mission.value.json.items) ? mission.value.json.items : [];
-      const found = cleanItems(rawFound, { sources: mission.value.sources, agentName: agent.name });
+    if (found) {
       // Execution conflict: the Supplier agent vetoes any cited link that was
-      // not actually present in that specialist's search results.
+      // neither in the search results nor answering on the live site.
       const vetoed = rawFound.filter(item => item.url).length - found.filter(item => item.url).length;
       agent.vetoes = Math.max(0, vetoed);
       attachSourceLinks(found, mission.value.sources);
       items.push(...found);
+      const marketplaceSources = (mission.value.sources || []).filter(source => {
+        try { return MARKETPLACE_HOST.test(new URL(source.url).hostname); } catch { return false; }
+      }).length;
+      console.log(`[plan] ${agent.name}: ${mission.value.sources.length} sources (${marketplaceSources} marketplace) · ${rawFound.filter(i => i.url).length} cited links · ${found.filter(i => i.url).length} kept · ${vetoed} vetoed`);
       agent.thoughts = (Array.isArray(mission.value.json.thoughts) ? mission.value.json.thoughts : [])
         .map(thought => String(thought).slice(0, 60)).filter(Boolean).slice(0, 3);
       agent.spent = found.reduce((sum, item) => sum + item.price_gbp, 0);
@@ -372,7 +429,12 @@ export async function createPlan(text) {
       if (vetoed > 0) {
         events.push({
           who: 'Supplier', to: agent.name, kind: 'conflict',
-          text: `Vetoed ${vetoed} link${vetoed === 1 ? '' : 's'} not in your search results — matched real listings from the search instead.`
+          text: `Vetoed ${vetoed} link${vetoed === 1 ? '' : 's'} that failed the live check — kept only listings that really answer.`
+        });
+        conflicts.push({
+          between: `Supplier ↔ ${agent.name}`,
+          issue: `${agent.name} cited ${vetoed} listing link${vetoed === 1 ? '' : 's'} that appeared in neither its search results nor a live page check.`,
+          resolution: 'Supplier vetoed the unverifiable links; surviving lines carry only listings that really answer, the rest are labelled estimates.'
         });
       }
     } else {
@@ -382,8 +444,13 @@ export async function createPlan(text) {
         who: agent.name, to: 'Critic',
         text: 'Live Alibaba search failed — flagging a sourcing gap for risk review.'
       });
+      conflicts.push({
+        between: `${agent.name} ↔ Critic`,
+        issue: `${agent.name}'s live Alibaba search failed, leaving its category unsourced.`,
+        resolution: 'The Critic recorded the gap as a launch risk requiring manual sourcing.'
+      });
     }
-  });
+  }
 
   // Negotiation: specialists that overshot their allocation must argue for
   // more budget. The FIRST conflict is negotiated by the agents themselves —
@@ -447,6 +514,11 @@ export async function createPlan(text) {
           if (ruling.donor_note) {
             events.push({ who: 'Coordinator', to: donor.name, kind: 'conflict', text: String(ruling.donor_note).slice(0, 100) });
           }
+          conflicts.push({
+            between: `${agent.name} ↔ Coordinator`,
+            issue: `${agent.name} overspent by £${overBy.toLocaleString('en-GB')} and pleaded its own case: "${String(plea.plea || '').slice(0, 90)}"`,
+            resolution: `The Coordinator ruled on the plea and reallocated £${granted.toLocaleString('en-GB')} of ${donor.name}'s real headroom — clamped by the deterministic validators.`
+          });
         } else {
           negotiation = { requester: agent.name, granted: 0, donor: null };
           events.push({
@@ -456,6 +528,11 @@ export async function createPlan(text) {
           if (plea.fallback) {
             events.push({ who: agent.name, to: 'Coordinator', kind: 'conflict', text: `Understood. ${String(plea.fallback).slice(0, 100)}` });
           }
+          conflicts.push({
+            between: `${agent.name} ↔ Coordinator`,
+            issue: `${agent.name} overspent by £${overBy.toLocaleString('en-GB')} and pleaded its own case: "${String(plea.plea || '').slice(0, 90)}"`,
+            resolution: 'The Coordinator refused the plea — no justified headroom — and sent the lines to the Critic for cuts.'
+          });
         }
         settled = true;
       } catch {
@@ -463,9 +540,10 @@ export async function createPlan(text) {
       }
     }
     if (!settled) {
+      const baseAllocation = agent.lineBudget;
       events.push({
         who: agent.name, to: 'Coordinator', kind: 'conflict',
-        text: `Requesting £${overBy.toLocaleString('en-GB')} above my £${agent.lineBudget.toLocaleString('en-GB')} allocation for ${agent.focus.toLowerCase()}.`
+        text: `Requesting £${overBy.toLocaleString('en-GB')} above my £${baseAllocation.toLocaleString('en-GB')} allocation for ${agent.focus.toLowerCase()}.`
       });
       const donor = specialists.find(other => other !== agent && other.spent < other.lineBudget - overBy);
       if (donor) {
@@ -475,10 +553,20 @@ export async function createPlan(text) {
           who: 'Coordinator', to: agent.name, kind: 'conflict',
           text: `Approved — reallocating £${overBy.toLocaleString('en-GB')} of ${donor.name}'s unspent headroom to you.`
         });
+        conflicts.push({
+          between: `${agent.name} ↔ Coordinator`,
+          issue: `${agent.name} overshot its £${baseAllocation.toLocaleString('en-GB')} allocation by £${overBy.toLocaleString('en-GB')} and demanded more budget.`,
+          resolution: `The Coordinator arbitrated: £${overBy.toLocaleString('en-GB')} of ${donor.name}'s unspent headroom was reallocated to ${agent.name}.`
+        });
       } else {
         events.push({
           who: 'Coordinator', to: agent.name, kind: 'conflict',
           text: 'No headroom left in the swarm — your lines go to the Critic for cuts.'
+        });
+        conflicts.push({
+          between: `${agent.name} ↔ Coordinator`,
+          issue: `${agent.name} overshot its allocation by £${overBy.toLocaleString('en-GB')} with no unspent headroom anywhere in the swarm.`,
+          resolution: `The request was refused and ${agent.name}'s lines were sent to the Critic for cuts.`
         });
       }
     }
@@ -508,6 +596,7 @@ export async function createPlan(text) {
   });
   let revised = false;
   let revisionNote = '';
+  const overBudgetAtStart = cost.valid ? 0 : cost.total - budget;
   for (let round = 0; round < MAX_REVISIONS && !cost.valid; round++) {
     events.push({
       who: 'Critic', to: 'Swarm', kind: 'conflict',
@@ -538,11 +627,21 @@ export async function createPlan(text) {
       events.push({ who: 'Critic', to: 'Coordinator', text: revisionNote });
     }
   }
+  if (overBudgetAtStart > 0) {
+    conflicts.push({
+      between: 'Critic ↔ Swarm',
+      issue: `The swarm's first draft landed £${overBudgetAtStart.toLocaleString('en-GB')} OVER the £${budget.toLocaleString('en-GB')} ceiling once shipping, VAT and contingency were added.`,
+      resolution: revised
+        ? `The Critic overruled the specialists and revised the package: ${revisionNote}`
+        : 'The Critic could not fit the package inside the ceiling — the budget risk is flagged in this report.'
+    });
+  }
 
   // Underspend conflict: the user asked for a launch at THIS budget. If the
   // package leaves most of the ceiling unused, the Critic upgrades quantities
   // and spec toward the ceiling instead of quietly handing back a cheap plan.
   let upgraded = false;
+  const underspendAtStart = cost.valid && cost.total < budget * UNDERSPEND_RATIO ? budget - cost.total : 0;
   for (let round = 0; round < 2 && cost.valid && cost.total < budget * UNDERSPEND_RATIO; round++) {
     events.push({
       who: 'Critic', to: 'Swarm', kind: 'conflict',
@@ -589,6 +688,15 @@ export async function createPlan(text) {
       break;
     }
   }
+  if (underspendAtStart > 0) {
+    conflicts.push({
+      between: 'Critic ↔ Specialists',
+      issue: `The specialists' package left £${underspendAtStart.toLocaleString('en-GB')} of the £${budget.toLocaleString('en-GB')} ceiling unused — a cheap plan, not the launch the budget was for.`,
+      resolution: upgraded
+        ? `The Critic disagreed with the conservative draft and upgraded it: ${revisionNote}`
+        : 'The Critic attempted an upgrade but the validators rejected the draft — the verified conservative package stands, with headroom noted.'
+    });
+  }
 
   events.push({
     who: 'Critic', to: 'Coordinator',
@@ -622,6 +730,7 @@ export async function createPlan(text) {
   if (baseline.status === 'fulfilled') {
     const baselineItems = cleanItems(baseline.value.json.items, { sources: baseline.value.sources, agentName: 'Single agent' });
     if (baselineItems.length) {
+      await verifyPendingLinks(baselineItems);
       attachSourceLinks(baselineItems, baseline.value.sources);
       singleScore = scorePackage(baselineItems, budget, baseline.seconds);
       // The control's full package rides along so the user can inspect what
@@ -638,17 +747,18 @@ export async function createPlan(text) {
   };
 
   // Spread progress 8 -> 100 across events for the frontend timeline.
-  // If the story ran long, drop "Searching…" filler first — never the ending.
-  // Negotiation and memory events are the story — drop "Searching…" filler
-  // first, and never let a middle-splice land on a conflict or memory event.
+  // Negotiation and memory events are the story — drop 'think' filler first,
+  // and never let a middle-splice land on a conflict or memory event.
   while (events.length > 22) {
-    const filler = events.findIndex(event => event.text.startsWith('Searching Alibaba.com'));
+    const filler = events.findIndex(event => event.kind === 'think');
     if (filler >= 0) { events.splice(filler, 1); continue; }
     const middle = Math.floor(events.length / 2);
-    const victim = events.findIndex((event, i) => i >= middle && !event.kind);
+    const victim = events.findIndex((event, i) => i >= middle && (!event.kind || event.kind === 'talk'));
     events.splice(victim >= 0 ? victim : middle, 1);
   }
   const trimmed = events;
+  // Timeline row: [who, text, progress, to, kind] — kind 'think' renders as a
+  // thought bubble over the robot's head instead of spoken board dialogue.
   const timeline = trimmed.map((event, i) => [
     String(event.who).slice(0, 20),
     String(event.text).slice(0, 130),
@@ -694,6 +804,11 @@ export async function createPlan(text) {
     landed_cost: cost,
     revised,
     upgraded,
+    conflicts: conflicts.slice(0, 6).map(conflict => ({
+      between: String(conflict.between).slice(0, 40),
+      issue: String(conflict.issue).slice(0, 180),
+      resolution: String(conflict.resolution).slice(0, 180)
+    })),
     comparison
   };
 }

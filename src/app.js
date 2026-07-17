@@ -300,6 +300,7 @@ function resultsView() {
     ? `${measuredCompare}<section class="evaluation">
         <div><span class="label">QWEN SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2><p>Generated live by Qwen Cloud${plan.revised ? ' — the critic caught an over-budget package and revised it before approval.' : plan.upgraded ? ' — the critic caught an underspent package and upgraded it to use your budget properly.' : '.'}${plan.memory?.recalled ? ` This swarm arrived with memory of ${plan.memory.recalled} similar past mission${plan.memory.recalled === 1 ? '' : 's'} — each agent was briefed with its own prior experience before searching.` : ''}</p></div>
         <div class="findings">
+          ${plan.conflicts?.length ? `<div class="conflicts"><span>WHERE THE SWARM DISAGREED</span><ul>${plan.conflicts.map(c => `<li><b>${c.between}</b> — ${c.issue}<em>${c.resolution}</em></li>`).join('')}</ul></div>` : ''}
           <div><span>RISKS</span><ul>${plan.risks.map(r => `<li>${r}</li>`).join('') || '<li>No blocking risks recorded.</li>'}</ul></div>
           <div><span>ASSUMPTIONS</span><ul>${plan.assumptions.map(a => `<li>${a}</li>`).join('') || '<li>No assumptions recorded.</li>'}</ul></div>
         </div>
@@ -439,7 +440,12 @@ function buildDemoPlan() {
     items,
     landed_cost: { products, shipping, tax, contingency, total, budget: state.budget, remaining: state.budget - total, valid: total <= state.budget },
     risks: ['Demo catalogue prices are indicative samples, not live marketplace data.', 'Final landed costs change with shipping, VAT, duties and supplier pricing.'],
-    assumptions: ['Add a Qwen Cloud key for live Alibaba sourcing with verified listing links.']
+    assumptions: ['Add a Qwen Cloud key for live Alibaba sourcing with verified listing links.'],
+    conflicts: [{
+      between: 'Critic ↔ Swarm',
+      issue: 'The first package came in 10.7% over the budget ceiling once landed costs were added.',
+      resolution: 'The Critic pushed the specialists to rebuild it as a mixed-tier package inside the ceiling. (Scripted demo conflict.)'
+    }]
   };
 }
 
@@ -608,17 +614,33 @@ function showAbout() {
 const PHASE_NAMES = ['VALIDATING BRIEF', 'SPAWNING SPECIALISTS', 'SOURCING CANDIDATES', 'VERIFYING SUPPLIERS', 'CALCULATING LANDED COST', 'CRITIC REVIEW', 'REVISING PACKAGE', 'FINAL VERIFICATION', 'COMPLETE'];
 
 function buildEvents() {
+  // 5th field marks working steps that render as thought bubbles over the
+  // robot's head in the 3D room, keeping the board for actual dialogue.
   return [
     ['Coordinator', 'Structured brief validated. No blocking questions.', 8, 'Swarm', 'talk'],
-    [state.scenario.agents[0][1], `Searching ${state.scenario.items[0][0].toLowerCase()} candidates.`, 20, 'Coordinator', 'talk'],
+    [state.scenario.agents[0][1], `Searching ${state.scenario.items[0][0].toLowerCase()} candidates…`, 20, 'Coordinator', 'think'],
     [state.scenario.agents[1][1], 'Rejected 9 listings with incompatible specifications.', 34, 'Coordinator', 'talk'],
     [state.scenario.agents[2][1], 'Supplier and MOQ evidence attached to shortlist.', 48, state.scenario.agents[0][1], 'talk'],
-    [state.scenario.agents[3][1], 'Calculating shipping, VAT and landed cost estimates.', 61, 'Coordinator', 'talk'],
+    [state.scenario.agents[3][1], 'Calculating shipping, VAT and landed cost estimates…', 61, 'Coordinator', 'think'],
     ['Critic', 'Budget conflict detected: first package is 10.7% over ceiling.', 72, 'Swarm', 'conflict'],
     [state.scenario.agents[0][1], 'Revised package with mixed-tier equipment.', 84, 'Critic', 'conflict'],
     ['Critic', 'All essentials covered. Evidence and uncertainty labels verified.', 96, 'Coordinator', 'talk'],
     ['Coordinator', 'Package approved. Preparing your launch plan.', 100, 'Swarm', 'talk']
   ];
+}
+
+// Compact summary the 3D room shows on its board when the swarm finishes,
+// so the completed work is visible without leaving VR.
+function planSummary(plan) {
+  const cost = plan.landed_cost || {};
+  return {
+    total: cost.total || 0,
+    budget: cost.budget || plan.budget_gbp || state.budget,
+    valid: cost.valid !== false,
+    liveLinks: (plan.items || []).filter(item => item[5]).length,
+    itemCount: (plan.items || []).length,
+    items: (plan.items || []).map(item => [item[0], item[2]])
+  };
 }
 
 function showResults() {
@@ -856,17 +878,24 @@ async function runSwarm3D() {
   room.callbacks.onEvent = ({ who, to, text, progress, phase, kind }) => {
     live.send({ type: 'event', event: [who, text, progress, to || '', kind || 'talk'] });
     live.send({ type: 'status', status: { text, phase, progress } });
-    const feed = document.querySelector('#xr-feed');
-    if (!feed) return;
-    const tag = KIND_TAGS[kind];
-    const row = document.createElement('div');
-    row.className = `xr-event ${/critic/i.test(who) || kind === 'conflict' ? 'warning' : ''} kind-${kind || 'talk'}`;
-    row.innerHTML = `<b>${who}${to ? ` → ${to}` : ''}${tag ? ` <i class="ev-kind">${tag}</i>` : ''}</b><p>${text}</p>`;
-    feed.prepend(row);
-    while (feed.children.length > 3) feed.lastChild.remove();
+    // Thought-steps live over the robots' heads — the HUD feed only carries
+    // actual agent dialogue, with conflict/memory exchanges tagged.
+    if (kind !== 'think') {
+      const feed = document.querySelector('#xr-feed');
+      if (feed) {
+        const tag = KIND_TAGS[kind];
+        const row = document.createElement('div');
+        row.className = `xr-event ${/critic/i.test(who) || kind === 'conflict' ? 'warning' : ''} kind-${kind || 'talk'}`;
+        row.innerHTML = `<b>${who}${to ? ` → ${to}` : ''}${tag ? ` <i class="ev-kind">${tag}</i>` : ''}</b><p>${text}</p>`;
+        feed.prepend(row);
+        while (feed.children.length > 3) feed.lastChild.remove();
+      }
+    }
     document.querySelector('#xr-phase-label').textContent = phase;
     document.querySelector('#xr-progress').style.width = `${progress}%`;
   };
+  // The 3D "VIEW LAUNCH PLAN" button the hub presents when the swarm is done.
+  room.callbacks.onViewPlan = () => { live.close(); room.dispose(); showResults(); };
   room.callbacks.onXRError = () => {
     const vrBtn = document.querySelector('#xr-vr');
     if (vrBtn) { vrBtn.textContent = 'VR unavailable'; vrBtn.disabled = true; }
@@ -903,11 +932,14 @@ async function runSwarm3D() {
     if (api.live) {
       setPhase('QWEN COORDINATOR PLANNING');
       let lineIndex = 0;
-      room.setStatus(PLANNING_LINES[0]);
+      // While Qwen designs the team, the coordinator robot visibly "thinks"
+      // over its head — the board stays clear of planning chatter.
+      room.setStatus('The coordinator is designing your specialist swarm…');
+      room.hubThink(PLANNING_LINES[0]);
       const ticker = setInterval(() => {
         lineIndex++;
         const line = PLANNING_LINES[lineIndex % PLANNING_LINES.length];
-        room.setStatus(line);
+        room.hubThink(line);
         live.send({ type: 'status', status: { text: line, phase: 'PLANNING', progress: Math.min(16, 4 + lineIndex * 2) } });
       }, 2400);
       try {
@@ -927,7 +959,7 @@ async function runSwarm3D() {
         state.imagePromise = api.image({ business: plan.business_type, city: state.city, items: state.scenario.items.map(item => item[0]) })
           .then(({ url }) => { state.conceptImage = url; live.send({ type: 'image', url }); return url; })
           .catch(() => null);
-        room.begin(state.scenario, plan.events, { type: state.scenario.type, budget: state.budget });
+        room.begin(state.scenario, plan.events, { type: state.scenario.type, budget: state.budget }, planSummary(plan));
       } catch (err) {
         clearInterval(ticker);
         setHudBrief(`live planning unavailable · demo catalogue`);
@@ -935,12 +967,12 @@ async function runSwarm3D() {
         console.warn('Live planning failed:', err.message);
         live.send({ type: 'agents', agents: state.scenario.agents });
         await wait(1600);
-        room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget });
+        room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget }, planSummary(buildDemoPlan()));
       }
     } else {
       setHudBrief('demo catalogue');
       live.send({ type: 'agents', agents: state.scenario.agents });
-      room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget });
+      room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget }, planSummary(buildDemoPlan()));
     }
   }
 

@@ -242,6 +242,32 @@ export async function buildPlanPdf(plan, brief, imageUrl) {
     }
   }
 
+  // ---- Conflicts & resolutions ----
+  if (plan.conflicts?.length) {
+    sectionTitle('WHERE THE SWARM DISAGREED');
+    doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...MID);
+    const conflictIntro = doc.splitTextToSize('Multi-agent value comes from friction: these are the points where agents disagreed during this run, and how each conflict was resolved before approval.', CW);
+    ensureRoom(conflictIntro.length * 11 + 8);
+    doc.text(conflictIntro, M, y); y += conflictIntro.length * 11 + 10;
+    for (const conflict of plan.conflicts) {
+      const issueLines = doc.setFont('helvetica', 'normal').setFontSize(9).splitTextToSize(String(conflict.issue || ''), CW - 16);
+      const resolutionLines = doc.setFont('helvetica', 'normal').setFontSize(8.5).splitTextToSize(`Resolution — ${String(conflict.resolution || '')}`, CW - 16);
+      ensureRoom(12 + issueLines.length * 12 + resolutionLines.length * 11 + 12);
+      doc.setFillColor(...WARN);
+      doc.circle(M + 3, y - 3, 2.2, 'F');
+      doc.setFont('helvetica', 'bold').setFontSize(7.5).setTextColor(...WARN);
+      doc.text(String(conflict.between || 'Swarm').toUpperCase(), M + 14, y, { charSpace: 0.6 });
+      y += 12;
+      doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...INK);
+      doc.text(issueLines, M + 14, y);
+      y += issueLines.length * 12;
+      doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...GOOD);
+      doc.text(resolutionLines, M + 14, y);
+      y += resolutionLines.length * 11 + 12;
+    }
+    y += 2;
+  }
+
   // ---- Risks & assumptions ----
   const bullets = (title, list, color) => {
     if (!list?.length) return;
