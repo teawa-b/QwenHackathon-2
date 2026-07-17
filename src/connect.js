@@ -27,7 +27,7 @@ export function showConnect(app, prefillCode) {
 
   const header = right => `<header class="c-top">
     <a class="c-brand" href="/"><span></span>SupplySwarm</a>
-    ${right ? `<div class="c-session">${right}</div>` : ''}
+    ${right ? `<div class="c-session">${right}</div>` : '<b class="c-ali">Qwen · Alibaba Cloud</b>'}
   </header>`;
 
   // ---------- Pairing screen ----------
@@ -45,6 +45,7 @@ export function showConnect(app, prefillCode) {
         </form>
         <p class="c-error" ${error ? '' : 'hidden'}>${esc(error)}</p>
         <p class="c-hint">The code appears whenever someone opens the 3D Ops Room on this site.</p>
+        <p class="c-credit">Built by <a href="https://github.com/teawa-b" target="_blank" rel="noopener noreferrer">Tiwa Bakree · @teawa-b</a> · powered by Qwen, Alibaba Cloud</p>
       </section>
     </main>`;
     const input = app.querySelector('#pair-code');
@@ -196,12 +197,15 @@ export function showConnect(app, prefillCode) {
     if (bar) bar.style.width = `${Math.max(2, Math.min(100, Number(status?.progress) || 0))}%`;
   }
 
-  function addFeedRow([who, text, , to], isRequest = false) {
+  const KIND_TAGS = { conflict: 'CONFLICT', memory: 'MEMORY', veto: 'VETO' };
+
+  function addFeedRow([who, text, , to, kind], isRequest = false) {
     const feed = app.querySelector('#c-feed');
     if (!feed) return;
+    const tag = KIND_TAGS[kind];
     const row = document.createElement('div');
-    row.className = `c-event${isRequest ? ' request' : ''}${/critic/i.test(String(who)) ? ' warning' : ''}`;
-    row.innerHTML = `<b>${esc(who)}${to ? ` → ${esc(to)}` : ''}</b><p>${esc(text)}</p>`;
+    row.className = `c-event${isRequest ? ' request' : ''}${/critic/i.test(String(who)) || kind === 'conflict' ? ' warning' : ''} kind-${esc(kind || 'talk')}`;
+    row.innerHTML = `<b>${esc(who)}${to ? ` → ${esc(to)}` : ''}${tag ? ` <i class="ev-kind">${tag}</i>` : ''}</b><p>${esc(text)}</p>`;
     feed.prepend(row);
     while (feed.children.length > 40) feed.lastChild.remove();
   }
@@ -231,10 +235,12 @@ export function showConnect(app, prefillCode) {
     const index = d.agents.indexOf(agent);
     const said = d.events.filter(event => String(event[0]).toLowerCase() === agent[1].toLowerCase()).slice(-3);
     const thoughts = Array.isArray(agent[3]) ? agent[3] : [];
+    const memory = Array.isArray(agent[4]) ? agent[4] : [];
     const lines = (d.plan?.items || []).filter(item => String(item[7] || '').toLowerCase() === agent[1].toLowerCase());
     const spend = lines.reduce((sum, item) => sum + (Number(item[2]) || 0), 0);
     detail.innerHTML = `
       <div class="detail-head" style="--accent:${agentAccent(index)}"><b>${esc(agent[0])}</b><div><strong>${esc(agent[1])}</strong><span>${esc(agent[2] || '')}</span></div></div>
+      ${memory.length ? `<div class="detail-block memory"><p class="c-label">Remembers from past missions</p><ul>${memory.map(line => `<li>${esc(line)}</li>`).join('')}</ul></div>` : ''}
       ${thoughts.length ? `<div class="detail-block"><p class="c-label">Thinking</p><ul>${thoughts.map(thought => `<li>${esc(thought)}</li>`).join('')}</ul></div>` : ''}
       ${said.length ? `<div class="detail-block"><p class="c-label">Last said</p><ul>${said.map(event => `<li>“${esc(event[1])}”</li>`).join('')}</ul></div>` : '<p class="detail-live">No dialogue from this agent yet.</p>'}
       ${lines.length ? `<div class="detail-block"><p class="c-label">SOURCED · ${money(spend)}</p><ul>${lines.map(item => `<li>${esc(item[0])} — ${money(item[2])} · <a href="${esc(item[5] || aliSearch(item[0]))}" target="_blank" rel="noopener noreferrer">${item[5] ? 'listing' : 'search'} ↗</a></li>`).join('')}</ul></div>` : ''}`;

@@ -137,6 +137,10 @@ function applyPlan(plan) {
   state.city = plan.city || state.city;
   state.team = plan.team_size;
   state.scenario = { type: plan.business_type, team: plan.team_size, agents: plan.agents, items: plan.items };
+  // Recalled swarm memory rides along as the Coordinator's genuine thoughts.
+  if (plan.memory?.recalled) {
+    state.scenario.coordThoughts = plan.memory.lines.map(line => `Remembering: ${String(line).slice(0, 80)}`);
+  }
 }
 
 const app = document.querySelector('#app');
@@ -145,11 +149,18 @@ function money(value) {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(value);
 }
 
+// "Powered by" mark — Alibaba Cloud orange, drawn inline so it works offline.
+const aliMark = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.2 5.5h3.4L9.2 7.3l-3.6 1a1.8 1.8 0 0 0-1.3 1.7v4c0 .8.5 1.5 1.3 1.7l3.6 1 1.4 1.8H7.2A3.7 3.7 0 0 1 3.5 14.8v-5.6A3.7 3.7 0 0 1 7.2 5.5Zm9.6 0h-3.4l1.4 1.8 3.6 1a1.8 1.8 0 0 1 1.3 1.7v4c0 .8-.5 1.5-1.3 1.7l-3.6 1-1.4 1.8h3.4a3.7 3.7 0 0 0 3.7-3.7V9.2a3.7 3.7 0 0 0-3.7-3.7ZM9 11.1h6v1.8H9z"/></svg>`;
+const aliBadge = (extra = '') => `<a class="ali-badge ${extra}" href="https://www.alibabacloud.com/en/product/modelstudio" target="_blank" rel="noopener noreferrer" title="Every model in this app runs on Alibaba Cloud Model Studio">${aliMark}<span>Powered by <b>Qwen</b> · Alibaba Cloud</span></a>`;
+
 function header() {
   return `<header class="topbar">
     <a class="brand" href="#" aria-label="SupplySwarm home"><span class="brand-mark"><i></i><i></i><i></i></span><span>Supply<em>Swarm</em></span></a>
-    <div class="mode"><span></span> <b data-mode-label>${modeLabel()}</b></div>
-    <button class="menu" aria-label="About SupplySwarm" data-about>?</button>
+    <div class="topbar-right">
+      ${aliBadge('in-topbar')}
+      <div class="mode"><span></span> <b data-mode-label>${modeLabel()}</b></div>
+      <button class="menu" aria-label="About SupplySwarm" data-about>?</button>
+    </div>
   </header>`;
 }
 
@@ -164,20 +175,20 @@ function briefView() {
       <svg class="lbg lbg-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M9 9h6M9 12.5h6M9 16h3.5"/></svg>
       <svg class="lbg lbg-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.3 4 5.2 4 8.5s-1.4 6.2-4 8.5c-2.6-2.3-4-5.2-4-8.5s1.4-6.2 4-8.5z"/></svg>
     </div>
-    <div class="landing-head">
+    <div class="landing-head reveal" style="--d:0">
       <div class="eyebrow"><span>SUPPLYSWARM</span> Procurement, assembled</div>
       <h1>Say what you want to build.<br><strong>A swarm sources it.</strong></h1>
-      <p class="landing-desc">Speak your idea in VR — a team of AI agents searches Alibaba live, fits your budget, and hands you a launch plan as a PDF on your phone.</p>
+      <p class="landing-desc">Speak your idea in VR — a society of AI agents searches Alibaba live, argues over your budget, remembers past missions, and hands you a launch plan as a PDF on your phone.</p>
     </div>
     <div class="doors">
-      <section class="door door-vr">
+      <section class="door door-vr reveal" style="--d:1">
         <div class="door-tag">HEADSET / DESKTOP</div>
         <h2>Use in VR</h2>
         <p>Enter the 3D operations room. Hold the coordinator robot, speak your business brief, and watch the specialist swarm assemble around you. Works in passthrough AR too.</p>
         <button class="assemble" data-start-3d><span>USE IN VR</span><b>◈</b></button>
         <em>Also works on desktop — drag to orbit, hold the robot to talk, tap any robot to inspect it.</em>
       </section>
-      <section class="door door-mobile">
+      <section class="door door-mobile reveal" style="--d:2">
         <div class="door-tag">PHONE</div>
         <h2>Join session on mobile</h2>
         <p>Enter the code shown inside the VR room. Follow the swarm live, message any agent from your phone, and receive the finished plan as a PDF.</p>
@@ -185,8 +196,25 @@ function briefView() {
         <em>Live agent feed, concept image, verified Alibaba links, downloadable PDF.</em>
       </section>
     </div>
+    <section class="how reveal" style="--d:3" aria-label="How SupplySwarm works">
+      <div class="how-step"><b>01</b><div><strong>Say the idea</strong><p>"A small gym in Birmingham, £15k." Spoken to a robot or typed — Qwen ASR transcribes it.</p></div></div>
+      <i class="how-arrow" aria-hidden="true">→</i>
+      <div class="how-step"><b>02</b><div><strong>The swarm argues</strong><p>Specialists search Alibaba live, veto fake links, and plead for budget — the Coordinator rules.</p></div></div>
+      <i class="how-arrow" aria-hidden="true">→</i>
+      <div class="how-step"><b>03</b><div><strong>Plan on your phone</strong><p>Verified listings, landed costs, a concept visual and a PDF — measured against a solo agent.</p></div></div>
+    </section>
+    <div id="mem-strip" aria-live="polite"></div>
     ${recentsSection()}
-    <p class="fineprint landing-fine">No purchases or supplier messages are ever sent. Every consequential action requires your approval. <span data-live-copy>${api.live ? 'Live planning · Qwen Cloud connected.' : 'Running on the demo catalogue.'}</span></p>
+    <footer class="site-footer reveal" style="--d:4">
+      <div class="footer-brand">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div><strong>SupplySwarm</strong><p>A procurement department, formed on demand. No purchases or supplier messages are ever sent — every consequential action stays yours. <span data-live-copy>${api.live ? 'Live planning · Qwen Cloud connected.' : 'Running on the demo catalogue.'}</span></p></div>
+      </div>
+      <div class="footer-meta">
+        ${aliBadge()}
+        <p class="footer-credit">Designed &amp; built by <a href="https://github.com/teawa-b" target="_blank" rel="noopener noreferrer"><b>Tiwa Bakree</b> · @teawa-b</a> for the Qwen Global AI Hackathon — Track 3: Agent Society</p>
+      </div>
+    </footer>
   </main>`;
 }
 
@@ -270,7 +298,7 @@ function resultsView() {
       </section>` : '';
   const insight = plan
     ? `${measuredCompare}<section class="evaluation">
-        <div><span class="label">QWEN SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2><p>Generated live by Qwen Cloud${plan.revised ? ' — the critic caught an over-budget package and revised it before approval.' : plan.upgraded ? ' — the critic caught an underspent package and upgraded it to use your budget properly.' : '.'}</p></div>
+        <div><span class="label">QWEN SWARM FINDINGS</span><h2>Risks &amp; assumptions.</h2><p>Generated live by Qwen Cloud${plan.revised ? ' — the critic caught an over-budget package and revised it before approval.' : plan.upgraded ? ' — the critic caught an underspent package and upgraded it to use your budget properly.' : '.'}${plan.memory?.recalled ? ` This swarm arrived with memory of ${plan.memory.recalled} similar past mission${plan.memory.recalled === 1 ? '' : 's'} — each agent was briefed with its own prior experience before searching.` : ''}</p></div>
         <div class="findings">
           <div><span>RISKS</span><ul>${plan.risks.map(r => `<li>${r}</li>`).join('') || '<li>No blocking risks recorded.</li>'}</ul></div>
           <div><span>ASSUMPTIONS</span><ul>${plan.assumptions.map(a => `<li>${a}</li>`).join('') || '<li>No assumptions recorded.</li>'}</ul></div>
@@ -419,7 +447,25 @@ function showBrief() {
   state.running = false; app.innerHTML = briefView(); bindBrief(); window.scrollTo(0, 0);
 }
 
+// Swarm memory strip — the server remembers every finished mission, so agents
+// arrive at a new brief already carrying experience. Shown when it exists.
+async function loadMemoryStrip() {
+  const host = document.querySelector('#mem-strip');
+  if (!host) return;
+  try {
+    const response = await fetch('/api/memory');
+    const memory = await response.json();
+    if (!memory.missions || !document.querySelector('#mem-strip')) return;
+    host.innerHTML = `<section class="mem-strip">
+      <div class="mem-head"><span class="mem-dot"></span><h2>Swarm memory</h2><b>${memory.missions} mission${memory.missions === 1 ? '' : 's'} remembered · ${memory.roles_learned} agent roles trained</b></div>
+      <p>Every agent carries its own memory into the next brief — past prices, budget overshoots and vetoed links shape how it sources today.</p>
+      <div class="mem-list">${memory.recent.map(mission => `<span class="mem-chip ${mission.valid ? '' : 'warn'}">${mission.business} · ${money(mission.total)} of ${money(mission.budget)}</span>`).join('')}</div>
+    </section>`;
+  } catch { /* memory strip is decorative — the landing works without it */ }
+}
+
 function bindBrief() {
+  loadMemoryStrip();
   // The landing offers exactly two doors. The 3D room always opens idle — the
   // user talks to the coordinator (or types) from there; phones pair at /connect.
   document.querySelector('[data-start-3d]').addEventListener('click', () => runSwarm3D());
@@ -554,7 +600,7 @@ async function recordingToWav(blob) {
 function showAbout() {
   const dialog = document.createElement('dialog');
   dialog.className = 'about-dialog';
-  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division: each specialist agent runs its own Qwen call with live web search against Alibaba.com, real listing links are verified against the search results, a deterministic calculator handles landed costs, and a Critic agent revises over-budget packages and upgrades underspent ones.</p><p>Without a Qwen Cloud key the app falls back to a transparent demo catalogue — nothing is ever simulated as live.</p>`;
+  dialog.innerHTML = `<button aria-label="Close">×</button><span class="label">ABOUT THE DEMO</span><h2>A procurement department, formed on demand.</h2><p>SupplySwarm demonstrates Qwen-powered task division: each specialist agent runs its own Qwen call with live web search against Alibaba.com, real listing links are verified against the search results, a deterministic calculator handles landed costs, and a Critic agent revises over-budget packages and upgrades underspent ones. Budget conflicts are negotiated by the agents themselves — the overspender argues its case and the Coordinator rules on it, in separate Qwen calls.</p><p>Every agent keeps a persistent memory: finished missions are recorded per role, and relevant experience (past prices, overshoots, vetoed links) is recalled into each agent's briefing on the next run.</p><p>Without a Qwen Cloud key the app falls back to a transparent demo catalogue — nothing is ever simulated as live. Powered by Qwen on Alibaba Cloud Model Studio.</p><p class="about-credit">Designed &amp; built by <a href="https://github.com/teawa-b" target="_blank" rel="noopener noreferrer">Tiwa Bakree · @teawa-b</a></p>`;
   document.body.append(dialog); dialog.showModal();
   dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
 }
@@ -563,15 +609,15 @@ const PHASE_NAMES = ['VALIDATING BRIEF', 'SPAWNING SPECIALISTS', 'SOURCING CANDI
 
 function buildEvents() {
   return [
-    ['Coordinator', 'Structured brief validated. No blocking questions.', 8, 'Swarm'],
-    [state.scenario.agents[0][1], `Searching ${state.scenario.items[0][0].toLowerCase()} candidates.`, 20, 'Coordinator'],
-    [state.scenario.agents[1][1], 'Rejected 9 listings with incompatible specifications.', 34, 'Coordinator'],
-    [state.scenario.agents[2][1], 'Supplier and MOQ evidence attached to shortlist.', 48, state.scenario.agents[0][1]],
-    [state.scenario.agents[3][1], 'Calculating shipping, VAT and landed cost estimates.', 61, 'Coordinator'],
-    ['Critic', 'Budget conflict detected: first package is 10.7% over ceiling.', 72, 'Swarm'],
-    [state.scenario.agents[0][1], 'Revised package with mixed-tier equipment.', 84, 'Critic'],
-    ['Critic', 'All essentials covered. Evidence and uncertainty labels verified.', 96, 'Coordinator'],
-    ['Coordinator', 'Package approved. Preparing your launch plan.', 100, 'Swarm']
+    ['Coordinator', 'Structured brief validated. No blocking questions.', 8, 'Swarm', 'talk'],
+    [state.scenario.agents[0][1], `Searching ${state.scenario.items[0][0].toLowerCase()} candidates.`, 20, 'Coordinator', 'talk'],
+    [state.scenario.agents[1][1], 'Rejected 9 listings with incompatible specifications.', 34, 'Coordinator', 'talk'],
+    [state.scenario.agents[2][1], 'Supplier and MOQ evidence attached to shortlist.', 48, state.scenario.agents[0][1], 'talk'],
+    [state.scenario.agents[3][1], 'Calculating shipping, VAT and landed cost estimates.', 61, 'Coordinator', 'talk'],
+    ['Critic', 'Budget conflict detected: first package is 10.7% over ceiling.', 72, 'Swarm', 'conflict'],
+    [state.scenario.agents[0][1], 'Revised package with mixed-tier equipment.', 84, 'Critic', 'conflict'],
+    ['Critic', 'All essentials covered. Evidence and uncertainty labels verified.', 96, 'Coordinator', 'talk'],
+    ['Coordinator', 'Package approved. Preparing your launch plan.', 100, 'Swarm', 'talk']
   ];
 }
 
@@ -631,19 +677,22 @@ async function generateConceptImage(event) {
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function pushConsoleEvent(index, who, text, warning = false, to = '') {
+const KIND_TAGS = { conflict: 'CONFLICT', memory: 'MEMORY', veto: 'VETO' };
+
+function pushConsoleEvent(index, who, text, warning = false, to = '', kind = 'talk') {
   const feed = document.querySelector('#events');
   if (!feed) return;
+  const tag = KIND_TAGS[kind];
   const row = document.createElement('div');
-  row.className = `event ${warning ? 'warning' : ''}`;
-  row.innerHTML = `<time>${String(index + 1).padStart(2, '0')}:${String((index * 7) % 60).padStart(2, '0')}</time><b>${who}${to ? ` → ${to}` : ''}</b><p>${text}</p>`;
+  row.className = `event ${warning ? 'warning' : ''} kind-${kind}`;
+  row.innerHTML = `<time>${String(index + 1).padStart(2, '0')}:${String((index * 7) % 60).padStart(2, '0')}</time><b>${who}${to ? ` → ${to}` : ''}${tag ? ` <i class="ev-kind">${tag}</i>` : ''}</b><p>${text}</p>`;
   feed.prepend(row);
 }
 
 async function playTimeline(events) {
   const agentTotal = state.scenario.agents.length;
   for (let i = 0; i < events.length; i++) {
-    const [who, text, progress, to] = events[i];
+    const [who, text, progress, to, kind] = events[i];
     // Light up the panel entry for whichever agent is actually speaking.
     const speakerIndex = state.scenario.agents.findIndex(a =>
       a[1].toLowerCase() === String(who).toLowerCase() || a[0].toLowerCase() === String(who).toLowerCase());
@@ -653,7 +702,7 @@ async function playTimeline(events) {
       const counter = document.querySelector('#agent-count');
       if (counter) counter.textContent = `${document.querySelectorAll('.agent.active').length} / ${agentTotal}`;
     }
-    pushConsoleEvent(i, who, text, /critic/i.test(who), to);
+    pushConsoleEvent(i, who, text, /critic/i.test(who) || kind === 'conflict', to, kind);
     const phaseIndex = Math.min(PHASE_NAMES.length - 1, Math.floor(i / Math.max(1, events.length - 1) * (PHASE_NAMES.length - 1)));
     const label = document.querySelector('#phase-label');
     if (label) label.textContent = PHASE_NAMES[phaseIndex];
@@ -721,7 +770,7 @@ async function runSwarm3D() {
       <div class="xr-canvas" id="xr-canvas"></div>
       <div class="xr-hud">
         <div class="xr-hud-top">
-          <div class="xr-brief"><span>3D ops room</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em>
+          <div class="xr-brief"><span>3D ops room · powered by Qwen — Alibaba Cloud</span><strong id="xr-title">SupplySwarm</strong><em id="xr-sub">Hold the coordinator and speak — or type your brief</em>
             <button class="xr-code" id="xr-code" hidden title="Enter this code at /connect on your phone to watch and steer the swarm">Phone link <b id="xr-code-value"></b><span>${window.location.host}/connect</span></button>
           </div>
           <div class="xr-hud-buttons">
@@ -804,14 +853,15 @@ async function runSwarm3D() {
     onExit: null
   });
 
-  room.callbacks.onEvent = ({ who, to, text, progress, phase }) => {
-    live.send({ type: 'event', event: [who, text, progress, to || ''] });
+  room.callbacks.onEvent = ({ who, to, text, progress, phase, kind }) => {
+    live.send({ type: 'event', event: [who, text, progress, to || '', kind || 'talk'] });
     live.send({ type: 'status', status: { text, phase, progress } });
     const feed = document.querySelector('#xr-feed');
     if (!feed) return;
+    const tag = KIND_TAGS[kind];
     const row = document.createElement('div');
-    row.className = `xr-event ${/critic/i.test(who) ? 'warning' : ''}`;
-    row.innerHTML = `<b>${who}${to ? ` → ${to}` : ''}</b><p>${text}</p>`;
+    row.className = `xr-event ${/critic/i.test(who) || kind === 'conflict' ? 'warning' : ''} kind-${kind || 'talk'}`;
+    row.innerHTML = `<b>${who}${to ? ` → ${to}` : ''}${tag ? ` <i class="ev-kind">${tag}</i>` : ''}</b><p>${text}</p>`;
     feed.prepend(row);
     while (feed.children.length > 3) feed.lastChild.remove();
     document.querySelector('#xr-phase-label').textContent = phase;

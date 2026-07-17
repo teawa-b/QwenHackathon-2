@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { sfx } from './audio.js';
 
 const INK = 0x0d1424, LIME = 0xe8a33d, MINT = 0x5c7cff, ORANGE = 0xff7a5c;
@@ -161,6 +162,21 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.01;
     ring.userData.keepInAR = true; world.add(ring);
   }
+
+  // Set dressing: cargo pallets modelled in Blender and baked to GLB
+  // (public/models/supply-props.glb) — scattered outside the agent ring so the
+  // room reads as a working supply depot. Purely decorative; failures ignored.
+  let disposed = false;
+  new GLTFLoader().load('/models/supply-props.glb', gltf => {
+    if (disposed) return;
+    for (const [x, z, rot, s] of [[4.7, -2.3, 0.7, 1], [-4.5, -2.7, 2.4, 0.85], [3.7, 4.0, -1.8, 0.9], [-3.5, 4.4, 0.4, 1.05]]) {
+      const props = gltf.scene.clone(true);
+      props.position.set(x, 0, z);
+      props.rotation.y = rot;
+      props.scale.setScalar(s);
+      world.add(props);
+    }
+  }, undefined, () => {});
 
   // Coordinator — the robot you hold and talk to
   const coordinator = buildBot(LIME, 1.15);
@@ -538,6 +554,11 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         'Comparing unit prices and MOQ terms…',
         'Attaching evidence to my shortlist…'
       ];
+      // The agent's recalled memory joins its thought rotation, so what it
+      // remembers from past missions is visible while it works.
+      const memory = (Array.isArray(agent[4]) ? agent[4] : [])
+        .map(line => `Remembering: ${String(line).slice(0, 82)}`);
+      thoughts.unshift(...memory.slice(0, 2));
       return {
         bot, label, link, pulse, beam, accent,
         code: String(agent[0] || ''), name: String(agent[1] || ''), focus,
@@ -558,7 +579,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     sfx.play('spawn', 0.5);
   }
 
-  function showBubble(entity, text, elapsed, kind = 'speech', duration = EVENT_GAP + 0.8) {
+  function showBubble(entity, text, elapsed, kind = 'speech', duration = EVENT_GAP + 0.8, accent = null) {
     // One bubble per robot at a time; speech always wins over a thought.
     for (let b = bubbles.length - 1; b >= 0; b--) {
       if (bubbles[b].entity === entity) {
@@ -569,7 +590,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         bubbles.splice(b, 1);
       }
     }
-    const sprite = makeBubbleSprite(text, entity.accent, kind);
+    const sprite = makeBubbleSprite(text, accent || entity.accent, kind);
     world.add(sprite);
     bubbles.push({ sprite, entity, start: elapsed, until: elapsed + duration, kind });
   }
@@ -606,8 +627,8 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   }
 
   function fireEvent(i, elapsed) {
-    const [who, text, pct, to] = events[i];
-    rows.push({ who, to, text, warning: /critic/i.test(who) });
+    const [who, text, pct, to, kind = 'talk'] = events[i];
+    rows.push({ who, to, text, warning: /critic/i.test(who) || kind === 'conflict' });
     progress = pct;
     phaseLabel = phaseNames[Math.min(phaseNames.length - 1, Math.floor(i / Math.max(1, events.length - 1) * (phaseNames.length - 1)))];
 
@@ -631,7 +652,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         target.nodUntil = elapsed + 1.6;
       }
     }
-    if (speaker) showBubble(speaker, text, elapsed);
+    // Conflicts flash orange, memory recalls flash violet — the disagreement
+    // and the remembering are legible at a glance, even across the room.
+    const bubbleAccent = kind === 'conflict' ? ORANGE : kind === 'memory' ? 0xc4b5fd : null;
+    if (speaker) showBubble(speaker, text, elapsed, 'speech', EVENT_GAP + 0.8, bubbleAccent);
     if (speaker && target && target !== speaker) startTalk(speaker, target, elapsed);
 
     if (i === events.length - 1) {
@@ -642,7 +666,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       sfx.play('event', 0.3);
     }
     drawBoard();
-    callbacks.onEvent?.({ who, to, text, progress: pct, phase: phaseLabel, index: i });
+    callbacks.onEvent?.({ who, to, text, progress: pct, phase: phaseLabel, index: i, kind });
   }
 
   renderer.setAnimationLoop((timestamp, frame) => {
@@ -829,6 +853,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     begin(scenario, timeline, newBrief) {
       if (timelineStart >= 0) return;
       specialists = buildSpecialists(scenario.agents);
+      // Recalled swarm memory becomes the Coordinator's opening thoughts.
+      if (Array.isArray(scenario.coordThoughts) && scenario.coordThoughts.length) {
+        coordEntity.thoughts = [...scenario.coordThoughts, ...coordEntity.thoughts];
+      }
       // Attribute sourced lines to their agent so tap-to-inspect shows real spend.
       for (const s of specialists) {
         s.itemLines = (scenario.items || []).filter(item =>
@@ -852,6 +880,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       drawBoard();
     },
     dispose() {
+      disposed = true;
       sfx.stopMusic();
       renderer.setAnimationLoop(null);
       if (hitTestSource) { hitTestSource.cancel?.(); hitTestSource = null; }

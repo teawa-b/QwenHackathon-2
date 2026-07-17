@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MODELS, liveMode, transcribe, generateImage, QwenError } from './qwen.js';
 import { createPlan } from './planner.js';
+import { memorySummary } from './memory.js';
 import { attachLive } from './live.js';
 
 const app = express();
@@ -18,6 +19,12 @@ const asyncRoute = handler => (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ live: liveMode(), models: liveMode() ? MODELS : null });
+});
+
+// What the swarm remembers across missions — powers the landing "swarm
+// memory" strip and lets judges verify persistence between runs.
+app.get('/api/memory', (req, res) => {
+  res.json(memorySummary());
 });
 
 app.post('/api/plan', asyncRoute(async (req, res) => {
