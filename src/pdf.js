@@ -66,6 +66,10 @@ export async function buildPlanPdf(plan, brief, imageUrl) {
   doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(154, 166, 184);
   doc.text(`Generated ${new Date().toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'short' })}`, W - M, 40, { align: 'right' });
   doc.text(plan.live === false ? 'Demo catalogue — clearly labelled sample data' : 'Qwen Cloud live web search · alibaba.com', W - M, 54, { align: 'right' });
+  if (plan.memory?.recalled) {
+    doc.setTextColor(196, 181, 253);
+    doc.text(`Swarm memory: ${plan.memory.recalled} similar past mission${plan.memory.recalled === 1 ? '' : 's'} informed this plan`, W - M, 68, { align: 'right' });
+  }
 
   // Brief facts inside the band
   const facts = [
@@ -288,6 +292,10 @@ export async function buildPlanPdf(plan, brief, imageUrl) {
     doc.setPage(p);
     doc.setDrawColor(...HAIR); doc.setLineWidth(0.6);
     doc.line(M, H - 44, W - M, H - 44);
+    doc.setFont('helvetica', 'bold').setFontSize(6.5).setTextColor(255, 106, 0);
+    doc.text('POWERED BY QWEN · ALIBABA CLOUD MODEL STUDIO', M, H - 50, { charSpace: 0.8 });
+    doc.setTextColor(...FAINT);
+    doc.text('SUPPLYSWARM — DESIGNED & BUILT BY TIWA BAKREE (@TEAWA-B)', W - M, H - 50, { align: 'right', charSpace: 0.6 });
     doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...FAINT);
     doc.text('Live-listing links point to real Alibaba.com pages found by Qwen live web search; other lines link to an Alibaba search for that product and are labelled estimates.', M, H - 32, { maxWidth: CW - 60 });
     doc.text('Prices are model readings, not quotations — confirm price and MOQ on the listing. No purchases were made on your behalf.', M, H - 16, { maxWidth: CW - 60 });

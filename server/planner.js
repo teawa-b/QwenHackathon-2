@@ -1,4 +1,5 @@
 import { chatJSON, chatJSONWithSearch } from './qwen.js';
+import { recordMission, recallForBrief, coordinatorMemory, specialistMemory, criticMemory } from './memory.js';
 
 // Deterministic landed-cost model — the LLM never does this arithmetic.
 const SHIPPING_RATE = 0.075;
@@ -63,8 +64,12 @@ Rules:
 - 2 to 4 risks and 2 to 4 assumptions, honest and specific to this business and budget.
 - If the budget is clearly too small for the business, still design the best team and say so in risks.`;
 
-const specialistSystem = (name, focus, lineBudget, business) =>
-  `You are ${name}, a sourcing specialist agent in the SupplySwarm procurement swarm, equipping a new ${business}. Your responsibility: ${focus}.
+const memoryBlock = lines => lines.length
+  ? `\n\nYOUR MEMORY — real facts from your previous missions. Use them: they are your accumulated experience with prices, allocations and mistakes.\n${lines.map(line => `- ${line}`).join('\n')}`
+  : '';
+
+const specialistSystem = (name, focus, lineBudget, business, memory = []) =>
+  `You are ${name}, a sourcing specialist agent in the SupplySwarm procurement swarm, equipping a new ${business}. Your responsibility: ${focus}.${memoryBlock(memory)}
 
 You have LIVE web search. Find REAL, currently listed products on alibaba.com (aliexpress.com listings are also acceptable). Copy every URL EXACTLY, character for character, from your search results — NEVER invent, shorten, reconstruct or translate a URL. Prefer alibaba.com product/listing pages.
 
@@ -125,6 +130,31 @@ Respond with ONLY a JSON object:
   "messages": [ { "to": "name of the specialist agent whose line you changed", "text": "max 80 chars, what you told them and why" } ]
 }
 The sum of item prices should land between ${Math.round(UPGRADE_FLOOR_RATIO * 100)}% and ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% of the budget — as close to ${Math.round(PRODUCT_BUDGET_RATIO * 100)}% as sensible, never above it. 3 to 9 items. 0 to 2 messages.`;
+
+// Real agent-vs-agent negotiation: the overspending specialist argues its own
+// case in one Qwen call, and the Coordinator rules on it in a second,
+// independent call. Deterministic code clamps whatever they agree to the
+// actual headroom, so the dialogue is genuine but the arithmetic never lies.
+const pleaSystem = (name, focus, business) =>
+  `You are ${name}, a sourcing specialist in the SupplySwarm procurement swarm, equipping a new ${business}. Your responsibility: ${focus}. You have OVERSPENT your budget allocation and must now argue your case to the Coordinator to be granted more budget. You will be given your sourced items, your overspend, and which teammates have unspent headroom. Argue from the equipment itself — why these lines justify the money.
+
+Respond with ONLY a JSON object:
+{
+  "plea": "max 110 chars — your spoken argument to the Coordinator for the extra budget",
+  "request_gbp": <number — how much extra you are asking for>,
+  "fallback": "max 90 chars — what you would cut or downgrade if refused"
+}`;
+
+const ARBITRATE_SYSTEM = `You are the Coordinator of SupplySwarm. A specialist agent overspent its allocation and is pleading for extra budget. You will be given its plea, its items, and every teammate's REAL remaining headroom. Decide like a procurement lead: fund genuine essentials by reallocating a donor's unspent headroom; refuse padding.
+
+Respond with ONLY a JSON object:
+{
+  "decision": "approve" | "partial" | "refuse",
+  "granted_gbp": <number, 0 if refused — never more than the single largest teammate headroom>,
+  "donor": "name of the teammate whose headroom you are reallocating, or null if refused",
+  "ruling": "max 120 chars — your spoken ruling to the requesting agent, referencing its argument",
+  "donor_note": "max 90 chars — what you tell the donor agent about losing headroom, or null if refused"
+}`;
 
 const MARKETPLACE_HOST = /(^|\.)(alibaba|aliexpress)\.com$/i;
 
@@ -300,7 +330,15 @@ function scorePackage(items, budget, seconds) {
  */
 export async function createPlan(text) {
   const planStart = Date.now();
-  const raw = await chatJSON({ system: COORD_SYSTEM, user: text, temperature: 0.5 });
+  // Swarm memory: recall relevant past missions (deterministic keyword match)
+  // and hand each agent its own experience before any Qwen call runs.
+  const recalls = recallForBrief(text);
+  const coordMemory = coordinatorMemory(recalls);
+  const raw = await chatJSON({
+    system: COORD_SYSTEM + memoryBlock(coordMemory),
+    user: text,
+    temperature: 0.5
+  });
 
   const budget = Math.max(500, Math.round(Number(raw.budget_gbp) || 10000));
   const business = String(raw.business_type || 'Independent business').slice(0, 60);
@@ -318,12 +356,17 @@ export async function createPlan(text) {
   };
 
   const productBudget = Math.round(budget * PRODUCT_BUDGET_RATIO);
-  const events = [
-    {
-      who: 'Coordinator', to: 'Swarm',
-      text: `Brief validated: ${business}, £${budget.toLocaleString('en-GB')} ceiling. ${specialists.length} specialists dispatched to Alibaba.com.`
-    }
-  ];
+  const events = [];
+  if (recalls.length) {
+    events.push({
+      who: 'Coordinator', to: 'Swarm', kind: 'memory',
+      text: `Recalling ${recalls.length} similar mission${recalls.length === 1 ? '' : 's'} from swarm memory (${recalls.map(mission => mission.business).join('; ').slice(0, 60)}) — briefing each agent with its own experience.`
+    });
+  }
+  events.push({
+    who: 'Coordinator', to: 'Swarm',
+    text: `Brief validated: ${business}, £${budget.toLocaleString('en-GB')} ceiling. ${specialists.length} specialists dispatched to Alibaba.com.`
+  });
 
   // Every specialist searches Alibaba live, in parallel. A solo single-agent
   // control run starts at the same moment so the comparison is measured fairly.
@@ -334,8 +377,9 @@ export async function createPlan(text) {
   }));
   const missions = await Promise.all(specialists.map(agent => {
     agent.lineBudget = Math.max(100, Math.round(productBudget * agent.share));
+    agent.memory = specialistMemory(recalls, agent);
     return timed(chatJSONWithSearch({
-      system: specialistSystem(agent.name, agent.focus, agent.lineBudget, business),
+      system: specialistSystem(agent.name, agent.focus, agent.lineBudget, business, agent.memory),
       user: `Business brief: ${text}\nSearch the web now for: site:alibaba.com ${agent.query}`
     }));
   }));
@@ -366,6 +410,7 @@ export async function createPlan(text) {
       // Execution conflict: the Supplier agent vetoes any cited link that was
       // neither in the search results nor answering on the live site.
       const vetoed = rawFound.filter(item => item.url).length - found.filter(item => item.url).length;
+      agent.vetoes = Math.max(0, vetoed);
       attachSourceLinks(found, mission.value.sources);
       items.push(...found);
       const marketplaceSources = (mission.value.sources || []).filter(source => {
@@ -383,7 +428,7 @@ export async function createPlan(text) {
       });
       if (vetoed > 0) {
         events.push({
-          who: 'Supplier', to: agent.name,
+          who: 'Supplier', to: agent.name, kind: 'conflict',
           text: `Vetoed ${vetoed} link${vetoed === 1 ? '' : 's'} that failed the live check — kept only listings that really answer.`
         });
         conflicts.push({
@@ -407,38 +452,123 @@ export async function createPlan(text) {
     }
   }
 
-  // Negotiation: specialists that overshot their allocation must request more
-  // budget; the Coordinator arbitrates using real headroom from underspenders.
+  // Negotiation: specialists that overshot their allocation must argue for
+  // more budget. The FIRST conflict is negotiated by the agents themselves —
+  // the overspender pleads in its own Qwen call, the Coordinator rules in a
+  // separate one — and deterministic code clamps the outcome to real headroom.
+  // Further conflicts fall back to deterministic arbitration to bound latency.
   const overspenders = specialists.filter(agent => agent.spent > agent.lineBudget * 1.05);
-  for (const agent of overspenders.slice(0, 2)) {
+  let negotiation = null;
+  for (const [conflictIndex, agent] of overspenders.slice(0, 2).entries()) {
     const overBy = Math.round(agent.spent - agent.lineBudget);
-    events.push({
-      who: agent.name, to: 'Coordinator',
-      text: `Requesting £${overBy.toLocaleString('en-GB')} above my £${agent.lineBudget.toLocaleString('en-GB')} allocation for ${agent.focus.toLowerCase()}.`
-    });
-    const donor = specialists.find(other => other !== agent && other.spent < other.lineBudget - overBy);
-    if (donor) {
-      donor.lineBudget -= overBy;
-      agent.lineBudget += overBy;
+    const headroom = specialists
+      .filter(other => other !== agent)
+      .map(other => ({ name: other.name, headroom_gbp: Math.max(0, Math.round(other.lineBudget - other.spent)) }));
+    let settled = false;
+    if (conflictIndex === 0) {
+      try {
+        const plea = await chatJSON({
+          system: pleaSystem(agent.name, agent.focus, business),
+          user: JSON.stringify({
+            your_allocation_gbp: agent.lineBudget,
+            you_spent_gbp: agent.spent,
+            overspend_gbp: overBy,
+            your_items: items.filter(item => item.agent === agent.name).map(item => ({ title: item.title, price_gbp: item.price_gbp })),
+            your_reasoning_so_far: agent.thoughts,
+            teammate_headroom: headroom
+          }),
+          temperature: 0.6, maxTokens: 400
+        });
+        const requested = Math.max(1, Math.min(Math.round(Number(plea.request_gbp) || overBy), overBy * 2));
+        events.push({
+          who: agent.name, to: 'Coordinator', kind: 'conflict',
+          text: String(plea.plea || `Requesting £${requested.toLocaleString('en-GB')} above my allocation.`).slice(0, 120)
+        });
+        const ruling = await chatJSON({
+          system: ARBITRATE_SYSTEM,
+          user: JSON.stringify({
+            requesting_agent: agent.name,
+            plea: String(plea.plea || '').slice(0, 160),
+            fallback_if_refused: String(plea.fallback || '').slice(0, 120),
+            request_gbp: requested,
+            overspend_gbp: overBy,
+            teammate_headroom: headroom
+          }),
+          temperature: 0.4, maxTokens: 400
+        });
+        const donor = specialists.find(other =>
+          other !== agent && other.name.toLowerCase() === String(ruling.donor || '').toLowerCase());
+        // Clamp the LLMs' agreement to arithmetic reality before applying it.
+        const granted = donor
+          ? Math.max(0, Math.min(Math.round(Number(ruling.granted_gbp) || 0), requested, Math.round(donor.lineBudget - donor.spent)))
+          : 0;
+        if (['approve', 'partial'].includes(ruling.decision) && granted > 0) {
+          donor.lineBudget -= granted;
+          agent.lineBudget += granted;
+          agent.negotiated = granted;
+          negotiation = { requester: agent.name, granted, donor: donor.name };
+          events.push({
+            who: 'Coordinator', to: agent.name, kind: 'conflict',
+            text: String(ruling.ruling || `Approved — £${granted.toLocaleString('en-GB')} reallocated from ${donor.name}.`).slice(0, 130)
+          });
+          if (ruling.donor_note) {
+            events.push({ who: 'Coordinator', to: donor.name, kind: 'conflict', text: String(ruling.donor_note).slice(0, 100) });
+          }
+          conflicts.push({
+            between: `${agent.name} ↔ Coordinator`,
+            issue: `${agent.name} overspent by £${overBy.toLocaleString('en-GB')} and pleaded its own case: "${String(plea.plea || '').slice(0, 90)}"`,
+            resolution: `The Coordinator ruled on the plea and reallocated £${granted.toLocaleString('en-GB')} of ${donor.name}'s real headroom — clamped by the deterministic validators.`
+          });
+        } else {
+          negotiation = { requester: agent.name, granted: 0, donor: null };
+          events.push({
+            who: 'Coordinator', to: agent.name, kind: 'conflict',
+            text: String(ruling.ruling || 'Refused — no headroom justifies this. Your lines go to the Critic for cuts.').slice(0, 130)
+          });
+          if (plea.fallback) {
+            events.push({ who: agent.name, to: 'Coordinator', kind: 'conflict', text: `Understood. ${String(plea.fallback).slice(0, 100)}` });
+          }
+          conflicts.push({
+            between: `${agent.name} ↔ Coordinator`,
+            issue: `${agent.name} overspent by £${overBy.toLocaleString('en-GB')} and pleaded its own case: "${String(plea.plea || '').slice(0, 90)}"`,
+            resolution: 'The Coordinator refused the plea — no justified headroom — and sent the lines to the Critic for cuts.'
+          });
+        }
+        settled = true;
+      } catch {
+        // Negotiation calls failed — fall through to deterministic arbitration.
+      }
+    }
+    if (!settled) {
+      const baseAllocation = agent.lineBudget;
       events.push({
-        who: 'Coordinator', to: agent.name,
-        text: `Approved — reallocating £${overBy.toLocaleString('en-GB')} of ${donor.name}'s unspent headroom to you.`
+        who: agent.name, to: 'Coordinator', kind: 'conflict',
+        text: `Requesting £${overBy.toLocaleString('en-GB')} above my £${baseAllocation.toLocaleString('en-GB')} allocation for ${agent.focus.toLowerCase()}.`
       });
-      conflicts.push({
-        between: `${agent.name} ↔ Coordinator`,
-        issue: `${agent.name} overshot its £${agent.lineBudget.toLocaleString('en-GB')} allocation by £${overBy.toLocaleString('en-GB')} and demanded more budget.`,
-        resolution: `The Coordinator arbitrated: £${overBy.toLocaleString('en-GB')} of ${donor.name}'s unspent headroom was reallocated to ${agent.name}.`
-      });
-    } else {
-      events.push({
-        who: 'Coordinator', to: agent.name,
-        text: 'No headroom left in the swarm — your lines go to the Critic for cuts.'
-      });
-      conflicts.push({
-        between: `${agent.name} ↔ Coordinator`,
-        issue: `${agent.name} overshot its allocation by £${overBy.toLocaleString('en-GB')} with no unspent headroom anywhere in the swarm.`,
-        resolution: `The request was refused and ${agent.name}'s lines were sent to the Critic for cuts.`
-      });
+      const donor = specialists.find(other => other !== agent && other.spent < other.lineBudget - overBy);
+      if (donor) {
+        donor.lineBudget -= overBy;
+        agent.lineBudget += overBy;
+        events.push({
+          who: 'Coordinator', to: agent.name, kind: 'conflict',
+          text: `Approved — reallocating £${overBy.toLocaleString('en-GB')} of ${donor.name}'s unspent headroom to you.`
+        });
+        conflicts.push({
+          between: `${agent.name} ↔ Coordinator`,
+          issue: `${agent.name} overshot its £${baseAllocation.toLocaleString('en-GB')} allocation by £${overBy.toLocaleString('en-GB')} and demanded more budget.`,
+          resolution: `The Coordinator arbitrated: £${overBy.toLocaleString('en-GB')} of ${donor.name}'s unspent headroom was reallocated to ${agent.name}.`
+        });
+      } else {
+        events.push({
+          who: 'Coordinator', to: agent.name, kind: 'conflict',
+          text: 'No headroom left in the swarm — your lines go to the Critic for cuts.'
+        });
+        conflicts.push({
+          between: `${agent.name} ↔ Coordinator`,
+          issue: `${agent.name} overshot its allocation by £${overBy.toLocaleString('en-GB')} with no unspent headroom anywhere in the swarm.`,
+          resolution: `The request was refused and ${agent.name}'s lines were sent to the Critic for cuts.`
+        });
+      }
     }
   }
 
@@ -469,11 +599,11 @@ export async function createPlan(text) {
   const overBudgetAtStart = cost.valid ? 0 : cost.total - budget;
   for (let round = 0; round < MAX_REVISIONS && !cost.valid; round++) {
     events.push({
-      who: 'Critic', to: 'Swarm',
+      who: 'Critic', to: 'Swarm', kind: 'conflict',
       text: `Budget conflict: package is £${(cost.total - budget).toLocaleString('en-GB')} over ceiling. Revising.`
     });
     const revision = await chatJSON({
-      system: REVISE_SYSTEM,
+      system: REVISE_SYSTEM + memoryBlock(criticMemory(recalls)),
       user: JSON.stringify({
         budget_gbp: budget,
         over_budget_gbp: cost.total - budget,
@@ -491,7 +621,7 @@ export async function createPlan(text) {
       for (const message of (Array.isArray(revision.messages) ? revision.messages : []).slice(0, 2)) {
         const target = specialists.find(agent => agent.name.toLowerCase() === String(message.to || '').toLowerCase());
         if (target && message.text) {
-          events.push({ who: 'Critic', to: target.name, text: String(message.text).slice(0, 90) });
+          events.push({ who: 'Critic', to: target.name, kind: 'conflict', text: String(message.text).slice(0, 90) });
         }
       }
       events.push({ who: 'Critic', to: 'Coordinator', text: revisionNote });
@@ -514,12 +644,12 @@ export async function createPlan(text) {
   const underspendAtStart = cost.valid && cost.total < budget * UNDERSPEND_RATIO ? budget - cost.total : 0;
   for (let round = 0; round < 2 && cost.valid && cost.total < budget * UNDERSPEND_RATIO; round++) {
     events.push({
-      who: 'Critic', to: 'Swarm',
+      who: 'Critic', to: 'Swarm', kind: 'conflict',
       text: `Underspend conflict: only £${cost.total.toLocaleString('en-GB')} of the £${budget.toLocaleString('en-GB')} ceiling is used. Upgrading the package.`
     });
     try {
       const upgrade = await chatJSON({
-        system: UPGRADE_SYSTEM,
+        system: UPGRADE_SYSTEM + memoryBlock(criticMemory(recalls)),
         user: JSON.stringify({
           budget_gbp: budget,
           unused_budget_gbp: budget - cost.total,
@@ -539,7 +669,7 @@ export async function createPlan(text) {
         for (const message of (Array.isArray(upgrade.messages) ? upgrade.messages : []).slice(0, 2)) {
           const target = specialists.find(agent => agent.name.toLowerCase() === String(message.to || '').toLowerCase());
           if (target && message.text) {
-            events.push({ who: 'Critic', to: target.name, text: String(message.text).slice(0, 90) });
+            events.push({ who: 'Critic', to: target.name, kind: 'conflict', text: String(message.text).slice(0, 90) });
           }
         }
         events.push({ who: 'Critic', to: 'Coordinator', text: revisionNote });
@@ -584,9 +714,11 @@ export async function createPlan(text) {
   });
 
   // Agent roster is finalised after the missions so each specialist's genuine
-  // LLM reasoning steps ride along as its 3D thought bubbles.
+  // LLM reasoning steps ride along as its 3D thought bubbles — and its recalled
+  // memory rides along too, so every surface can show what each agent remembers.
+  criticAgent.memory = criticMemory(recalls);
   const agents = [...specialists, supplierAgent, criticAgent]
-    .map(agent => [agent.code, agent.name, agent.focus, agent.thoughts || []]);
+    .map(agent => [agent.code, agent.name, agent.focus, agent.thoughts || [], agent.memory || []]);
 
   // Score both packages with the same deterministic validators. The swarm's
   // time is measured before waiting on the control run so it is not inflated.
@@ -615,21 +747,24 @@ export async function createPlan(text) {
   };
 
   // Spread progress 8 -> 100 across events for the frontend timeline.
-  // If the story ran long, drop thought filler first — never the ending.
-  while (events.length > 18) {
+  // Negotiation and memory events are the story — drop 'think' filler first,
+  // and never let a middle-splice land on a conflict or memory event.
+  while (events.length > 22) {
     const filler = events.findIndex(event => event.kind === 'think');
-    if (filler >= 0) events.splice(filler, 1);
-    else events.splice(Math.floor(events.length / 2), 1);
+    if (filler >= 0) { events.splice(filler, 1); continue; }
+    const middle = Math.floor(events.length / 2);
+    const victim = events.findIndex((event, i) => i >= middle && (!event.kind || event.kind === 'talk'));
+    events.splice(victim >= 0 ? victim : middle, 1);
   }
   const trimmed = events;
   // Timeline row: [who, text, progress, to, kind] — kind 'think' renders as a
   // thought bubble over the robot's head instead of spoken board dialogue.
   const timeline = trimmed.map((event, i) => [
     String(event.who).slice(0, 20),
-    String(event.text).slice(0, 110),
+    String(event.text).slice(0, 130),
     Math.round(8 + (92 * (i + 1)) / trimmed.length),
     String(event.to || '').slice(0, 20),
-    event.kind === 'think' ? 'think' : ''
+    event.kind || 'talk'
   ]);
 
   let risks = (raw.risks || []).map(String).slice(0, 4);
@@ -644,8 +779,19 @@ export async function createPlan(text) {
   }
   risks = risks.slice(0, 5);
 
+  // Commit this mission to swarm memory so the next run's agents inherit it.
+  try {
+    recordMission({
+      business, brief: text, budget, specialists, cost, revised, upgraded,
+      negotiation, verifiedLinks: items.filter(item => item.url).length, items
+    });
+  } catch (err) {
+    console.warn('[memory] record failed:', err.message);
+  }
+
   return {
     live: true,
+    memory: { recalled: recalls.length, lines: coordMemory.slice(0, 3) },
     business_type: business,
     city: raw.city ? String(raw.city).slice(0, 40) : null,
     team_size: Math.max(1, Math.round(Number(raw.team_size) || 1)),

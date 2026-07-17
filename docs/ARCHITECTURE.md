@@ -17,9 +17,10 @@ flowchart TB
     end
 
     subgraph Server [Express — server/]
-        API[/api/plan · /api/transcribe · /api/image/]
+        API[/api/plan · /api/transcribe · /api/image · /api/memory/]
         WS[live.js — WebSocket session hub<br/>connect codes · snapshots · request relay]
         PL[planner.js — agent society orchestrator]
+        MEM[memory.js — persistent per-agent memory<br/>record missions · deterministic recall]
         QW[qwen.js — Qwen Cloud client]
     end
 
@@ -32,6 +33,7 @@ flowchart TB
 
     MIC --> API --> ASR
     UI & XR --> API --> PL --> QW
+    PL <--> MEM
     QW --> TXT & SRCH & IMG
     XR <-->|host: state broadcast| WS
     CC <-->|companion: watch + requests| WS
@@ -48,24 +50,30 @@ One `/api/plan` request runs a full multi-agent pipeline. Each box is a **separa
 ```mermaid
 sequenceDiagram
     participant U as User brief
+    participant M as Swarm memory (deterministic recall)
     participant C as Coordinator (Qwen)
     participant S1 as Specialist ×N (Qwen + live web search, parallel)
     participant B as Single agent control (Qwen + search, parallel)
     participant V as Deterministic validators (no LLM)
     participant K as Critic (Qwen)
 
+    U->>M: keyword recall of similar past missions
+    M->>C: what the swarm learned (shares, overshoots)
     U->>C: business, city, team, budget
-    C->>S1: role, focus, Alibaba query, budget share
+    C->>S1: role, focus, Alibaba query, budget share + that role's own memory
     C->>B: same brief, no team (baseline)
     S1-->>V: items + cited URLs + reasoning "thoughts"
     Note over V: URL verification: a link survives ONLY if it<br/>appeared in that agent's real search results
-    V->>V: budget-share negotiation (overspenders ask,<br/>Coordinator reallocates real headroom)
+    S1->>C: overspender PLEADS its case (own Qwen call)
+    C-->>S1: Coordinator RULES on the plea (separate Qwen call)
+    Note over V: the agreed reallocation is clamped to the<br/>donor's real headroom before it is applied
     V->>V: landed cost = products + 7.5% shipping<br/>+ 8% VAT/duties + 5% contingency
     V->>K: if over budget: full package + overspend
     V->>K: if far under budget: package + unused headroom
     K-->>V: revised/upgraded items + messages to specific agents
     B-->>V: control package, scored by the SAME validators
-    V-->>U: plan + who→to event dialogue + measured comparison
+    V-->>U: plan + who→to event dialogue (talk/conflict/memory tags) + measured comparison
+    V->>M: record the mission per agent role
 ```
 
 ### Task decomposition & role assignment
@@ -75,10 +83,13 @@ The **Coordinator** call returns a bespoke team for *this* brief: per-agent code
 Each specialist runs `enable_search: true, search_options: { forced_search, enable_source }` — Qwen performs a real web search and the API returns the **actual result URLs** it saw. The planner enforces: *a cited link survives only if it appeared in that agent's own search results and is on alibaba.com (or aliexpress.com)*. Verified lines are labelled **“Live Alibaba listing”**; lines without a citation are handed a real URL from the agent's own search results where one exists; everything else is downgraded to a labelled estimate. No displayed link can be fabricated.
 
 ### Dialogue, disagreement, conflict resolution
-Every event is `who → to` dialogue, replayed in the console and acted out in 3D:
+Every event is `who → to` dialogue tagged with a kind (`talk` / `conflict` / `memory`), replayed in the console, acted out in 3D (conflict bubbles flash orange, memory recalls violet), and streamed to paired phones:
 - **Supplier vetoes** — cited URLs not present in the search results are rejected on-screen.
-- **Budget negotiation** — a specialist that overshoots its share requests more; the Coordinator reallocates *real* headroom from an underspender, or refuses and escalates to the Critic.
+- **Budget negotiation, argued by the agents themselves** — a specialist that overshoots its share pleads its case in its *own* Qwen call, grounded in its actual items, reasoning steps and memory; the Coordinator rules on the plea in a *separate* Qwen call given every teammate's real headroom. Deterministic code clamps the granted amount to the donor's genuine unspent headroom before applying it — the disagreement is real LLM-vs-LLM dialogue, the arithmetic is un-hallucinatable. If the negotiation calls fail, the planner falls back to deterministic arbitration.
 - **Critic revision** — over-budget packages are revised and heavily underspent packages are upgraded toward the ceiling; the Critic messages the specific agents whose lines it changed. Revision passes may only reuse URLs that survived the sourcing round.
+
+### Persistent per-agent memory (server/memory.js)
+Every completed mission is recorded per agent role: spend vs allocation, vetoed-link counts, negotiated budget transfers, top items with prices, and the package outcome. On a new brief, **deterministic keyword scoring** (no LLM in the recall path — recall can't hallucinate) selects up to two relevant past missions, and each agent's prompt is extended with *its own* remembered facts: the Coordinator learns how shares worked out, specialists remember what equipment cost and that vetoes happen to invented URLs, the Critic remembers which categories broke ceilings. Role matching falls back to search-query keyword overlap, so experience survives role renames across briefs. Memory is inspectable everywhere: `GET /api/memory` (summary), the landing "Swarm memory" strip, per-agent "Remembers" panels on the phone companion, and memory thought-bubbles in the 3D room.
 
 ### Measured efficiency vs single agent
 A solo Qwen agent with **identical tools** runs concurrently as a control. Both packages are scored by the **same deterministic validators**: verified links, item coverage, landed-cost budget validity, wall-clock seconds — plus the measured parallel-sourcing speed-up (Σ specialist durations ÷ wall time). The results page shows the live scorecard; nothing is scripted.
@@ -90,7 +101,7 @@ Landed cost (shipping, VAT/duties, contingency), budget validation, share normal
 
 | Capability | Model | Where |
 |---|---|---|
-| Role-prompted JSON planning (Coordinator, Critic) | `qwen3.7-plus`, `response_format: json_object` | `qwen.js: chatJSON` |
+| Role-prompted JSON planning (Coordinator, Critic, negotiation plea + ruling) | `qwen3.7-plus`, `response_format: json_object` | `qwen.js: chatJSON` |
 | **Live web search with cited sources** (specialists, control) | `qwen3.7-plus` + `enable_search`/`forced_search`/`enable_source` | `qwen.js: chatJSONWithSearch` |
 | Voice briefs (hold-to-talk, desktop + VR controller) | `qwen3-asr-flash` (browser re-encodes to 22.05 kHz mono WAV) | `qwen.js: transcribe` |
 | Concept image of the finished business | `qwen-image-2.0-pro` | `qwen.js: generateImage` |
@@ -99,6 +110,7 @@ Landed cost (shipping, VAT/duties, contingency), budget validation, share normal
 
 Three.js scene, lazy-loaded; WebXR `immersive-vr` **and** `immersive-ar` on Quest-class devices.
 - **Passthrough AR with surface detection** — the AR session requests `hit-test` (required) plus `plane-detection` and `anchors` (optional). The camera feed shows through (`alpha` renderer, background/fog dropped, virtual floor hidden); a reticle tracks real surfaces via per-frame hit-test poses; the first trigger pull decomposes the hit pose and sets a 0.42-scale miniature of the entire ops room onto the detected floor/desk, auto-rotated to face the viewer. All scene content lives in a single `world` group, so placement is one transform and every behaviour below works identically in AR, VR and desktop. Implemented with native WebXR APIs — the same features XR Blocks' `World` module wraps — with zero added dependencies.
+- Set-dressed with **low-poly cargo pallets modelled in Blender** (headless `bpy` script → 94 KB GLB, palette-matched with emissive scan-tags), scattered outside the agent ring.
 - Robots **beam in when they first speak** and *act out* the event stream: the speaker **walks toward whoever it addresses**, faces them, shows a **speech bubble** with the actual message, and fires a message pulse along an agent-to-agent line; the listener nods.
 - Between events, agents surface **thought bubbles** (dashed, italic) containing their **genuine Qwen reasoning steps** returned by each specialist call — the swarm's thinking is visualised, not decorated.
 - **Interactive**: tap any robot (or point a VR controller and pull the trigger) to inspect it — it turns to you and reports its role, sourced lines and spend. Hold the centre Coordinator to speak your brief.
@@ -114,8 +126,11 @@ Three.js scene, lazy-loaded; WebXR `immersive-vr` **and** `immersive-ar` on Ques
 
 ```
 server/qwen.js      Qwen Cloud client: chat-JSON, chat-JSON+web-search, ASR, image
-server/planner.js   Agent society: coordinator → parallel specialists+control →
-                    negotiation → landed cost → critic; scoring & event stream
+server/planner.js   Agent society: memory recall → coordinator → parallel
+                    specialists+control → LLM-vs-LLM budget negotiation →
+                    landed cost → critic; scoring, event stream, mission record
+server/memory.js    Persistent per-agent memory: record missions, deterministic
+                    keyword recall, per-role experience lines, /api/memory summary
 server/live.js      WebSocket hub: connect codes, session snapshots, request relay
 server/index.js     Express routes, image proxy, static hosting, error envelope
 src/app.js          Views (brief/ops/results), voice recorder, API client, routing
