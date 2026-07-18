@@ -204,10 +204,59 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   const codeTexture = new THREE.CanvasTexture(codeCanvas);
   codeTexture.colorSpace = THREE.SRGBColorSpace;
   const codeSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: codeTexture, transparent: true, depthWrite: false }));
-  codeSprite.scale.set(1.6, 0.56, 1);
-  codeSprite.position.set(0, 3.05, 0);
+  codeSprite.scale.set(1.35, 0.47, 1);
+  // Upper-left corner, above the board — well clear of the coordinator's speech
+  // bubbles that used to overlay it when it floated dead centre.
+  const CODE_BASE_Y = 4.35;
+  codeSprite.position.set(-3.9, CODE_BASE_Y, -2.2);
   codeSprite.visible = false;
   world.add(codeSprite);
+
+  // In-scene playback-speed control. A DOM slider is invisible inside an
+  // immersive session, so the speed toggle lives in the 3D world: point a
+  // controller at it and select (or tap/click on desktop) to cycle the pace.
+  const SPEEDS = [
+    { label: 'SLOW', scale: 2.1 },
+    { label: 'NORMAL', scale: 1.35 },
+    { label: 'FAST', scale: 0.8 }
+  ];
+  let speedIndex = 1; // NORMAL — matches paceScale's default
+  const speedCanvas = document.createElement('canvas');
+  speedCanvas.width = 512; speedCanvas.height = 200;
+  const speedCtx = speedCanvas.getContext('2d');
+  const speedTexture = new THREE.CanvasTexture(speedCanvas);
+  speedTexture.colorSpace = THREE.SRGBColorSpace;
+  const speedButton = new THREE.Sprite(new THREE.SpriteMaterial({ map: speedTexture, transparent: true, depthWrite: false }));
+  speedButton.scale.set(1.15, 0.45, 1);
+  // Lower-RIGHT front: clear of the left-hand board and (on desktop/mobile) the
+  // bottom-left HUD feed, while staying easy to point a controller at in VR.
+  speedButton.position.set(2.6, 0.9, 2.0);
+  world.add(speedButton);
+
+  function drawSpeedButton() {
+    const ctx = speedCtx;
+    ctx.clearRect(0, 0, 512, 200);
+    ctx.fillStyle = 'rgba(13,20,36,.92)';
+    ctx.beginPath(); ctx.roundRect(6, 6, 500, 188, 26); ctx.fill();
+    ctx.strokeStyle = 'rgba(232,163,61,.65)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.roundRect(6, 6, 500, 188, 26); ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8d97ad'; ctx.font = '600 26px sans-serif';
+    ctx.fillText('PLAYBACK SPEED', 256, 56);
+    ctx.fillStyle = '#e8a33d'; ctx.font = '700 66px sans-serif';
+    ctx.fillText(`▸ ${SPEEDS[speedIndex].label}`, 256, 120);
+    ctx.fillStyle = '#626d84'; ctx.font = '500 22px sans-serif';
+    ctx.fillText('TAP / SELECT TO CHANGE', 256, 166);
+    speedTexture.needsUpdate = true;
+  }
+  drawSpeedButton();
+
+  function cycleSpeed() {
+    speedIndex = (speedIndex + 1) % SPEEDS.length;
+    paceScale = SPEEDS[speedIndex].scale;
+    drawSpeedButton();
+    sfx.play('event', 0.35);
+  }
 
   function drawPhoneCode() {
     const ctx = codeCtx;
@@ -236,8 +285,11 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     new THREE.PlaneGeometry(3.4, 1.91),
     new THREE.MeshBasicMaterial({ map: boardTexture, transparent: true })
   );
-  board.position.set(0, 3.35, -4.3);
-  board.rotation.x = 0.06;
+  // Sit the board up and to the LEFT, angled back toward the viewer, so the
+  // coordinator (dead centre) no longer blocks the line of sight to it — the
+  // user glances up-left to read the ops board.
+  board.position.set(-3.9, 3.15, -2.7);
+  board.rotation.set(0.05, 0.62, 0);
   world.add(board);
 
   sfx.startMusic();
@@ -359,6 +411,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       callbacks.onViewPlan?.();
       return;
     }
+    if (speedButton.visible && raycaster.intersectObject(speedButton).length) {
+      cycleSpeed();
+      return;
+    }
     if (raycaster.intersectObject(coordinator, true).length) {
       holding = true;
       controls.enabled = false;
@@ -464,6 +520,11 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     // Pointing at the VIEW PLAN button and pulling the trigger opens results.
     if (viewButton?.visible && raycaster.intersectObject(viewButton).length) {
       callbacks.onViewPlan?.();
+      return;
+    }
+    // Pointing at the speed toggle cycles Slow / Normal / Fast.
+    if (speedButton.visible && raycaster.intersectObject(speedButton).length) {
+      cycleSpeed();
       return;
     }
     // In VR, pointing at a specialist and pulling the trigger inspects it.
@@ -575,7 +636,19 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   timer.connect(document);
   const tmp = new THREE.Vector3();
   const tmpDest = new THREE.Vector3();
-  const EVENT_GAP = 2.4; // long enough to read each exchange
+  // Playback pacing. Each timeline line dwells BASE_GAP seconds, scaled by the
+  // user-chosen paceScale (Slow/Normal/Fast) so the dialogue is actually
+  // readable. Conflicts and memory recalls linger longer — the disagreement is
+  // the story, so it should sit long enough to read.
+  const BASE_GAP = 2.6;
+  let paceScale = 1.35;   // start a touch slower than "normal" so lines read
+  let lastGap = BASE_GAP; // dwell chosen for the current line (drives bubble life)
+  let nextEventAt = -1;   // absolute time the next timeline event fires
+  function gapFor(index) {
+    const kind = events[index]?.[4] || 'talk';
+    const emphasis = (kind === 'conflict') ? 1.9 : kind === 'memory' ? 1.5 : kind === 'think' ? 0.85 : 1;
+    return BASE_GAP * paceScale * emphasis;
+  }
   // VR legibility: never more than this many bubbles in the room at once —
   // one conversation to follow, plus at most one background thought.
   const MAX_BUBBLES = 2;
@@ -721,7 +794,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     bubbles.splice(index, 1);
   }
 
-  function showBubble(entity, text, elapsed, kind = 'speech', duration = EVENT_GAP + 0.8, accent = null) {
+  function showBubble(entity, text, elapsed, kind = 'speech', duration = BASE_GAP + 0.8, accent = null) {
     // One bubble per robot at a time; speech always wins over a thought.
     for (let b = bubbles.length - 1; b >= 0; b--) {
       if (bubbles[b].entity === entity) {
@@ -784,6 +857,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     // Guarantee everyone eventually beams in even if they never speak.
     if (i < specialists.length) spawnSpecialist(specialists[i], elapsed);
 
+    // Dwell for this line — conflicts linger, so a price dispute is readable.
+    lastGap = gapFor(i);
+    const dwell = lastGap + 0.8;
+
     const speaker = findEntity(who);
     const target = findEntity(to);
     if (speaker && !speaker.isHub) spawnSpecialist(speaker, elapsed);
@@ -792,7 +869,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     if (isThought) {
       // Working step: the agent thinks over its own head — the board stays
       // reserved for actual dialogue between agents.
-      if (speaker) showBubble(speaker, text, elapsed, 'thought', EVENT_GAP + 0.8);
+      if (speaker) showBubble(speaker, text, elapsed, 'thought', dwell);
     } else {
       rows.push({ who, to, text, warning: /critic/i.test(who) || kind === 'conflict' });
       // The speaker walks toward whoever it is addressing, faces them and talks.
@@ -800,17 +877,19 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         const targetPos = entityPosition(target, new THREE.Vector3()).setY(0);
         speaker.moveTarget = speaker.home.clone().lerp(targetPos, target.isHub ? 0.45 : 0.42);
         speaker.faceTarget = targetPos.clone();
-        speaker.returnAt = elapsed + EVENT_GAP + 0.6;
+        speaker.returnAt = elapsed + dwell;
         if (!target.isHub) {
           target.faceTarget = speaker.home.clone();
-          target.returnAt = elapsed + EVENT_GAP + 0.6;
+          target.returnAt = elapsed + dwell;
           target.nodUntil = elapsed + 1.6;
         }
       }
       // Conflicts flash orange, memory recalls flash violet — disagreement
-      // and remembering are legible at a glance, even across the room.
+      // and remembering are legible at a glance, even across the room. A
+      // conflict line is prefixed so the dispute reads as a dispute.
       const bubbleAccent = kind === 'conflict' ? ORANGE : kind === 'memory' ? 0xc4b5fd : null;
-      if (speaker) showBubble(speaker, text, elapsed, 'speech', EVENT_GAP + 0.8, bubbleAccent);
+      const shown = kind === 'conflict' ? `⚡ ${text}` : text;
+      if (speaker) showBubble(speaker, shown, elapsed, 'speech', dwell, bubbleAccent);
       if (speaker && target && target !== speaker) startTalk(speaker, target, elapsed);
     }
 
@@ -897,9 +976,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       }
     }
 
-    if (timelineStart >= 0 && eventIndex < events.length && elapsed > timelineStart + eventIndex * EVENT_GAP) {
+    if (timelineStart >= 0 && eventIndex < events.length && elapsed >= nextEventAt) {
       fireEvent(eventIndex, elapsed);
       eventIndex++;
+      nextEventAt = elapsed + lastGap; // pace-scaled dwell before the next line
     }
 
     if (finaleAt >= 0 && elapsed >= finaleAt) { finaleAt = -1; beginFinale(elapsed); }
@@ -912,7 +992,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
 
     coordinator.position.y = Math.sin(elapsed * 1.6) * 0.05;
     coordinator.rotation.y = Math.sin(elapsed * 0.5) * 0.25;
-    if (codeSprite.visible) codeSprite.position.y = 3.05 + Math.sin(elapsed * 1.4) * 0.04;
+    if (codeSprite.visible) codeSprite.position.y = CODE_BASE_Y + Math.sin(elapsed * 1.4) * 0.04;
     hubLight.intensity = listening ? 13 + Math.sin(elapsed * 9) * 4 : 7 + Math.sin(elapsed * 3) * 2;
     if (listening) {
       halo.material.opacity = 0.5 + Math.sin(elapsed * 7) * 0.3;
@@ -1117,6 +1197,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       if (newBrief) briefLine = `${newBrief.type.toUpperCase()} · ${money(newBrief.budget)}`;
       statusText = '';
       timelineStart = timer.getElapsed() + 0.8;
+      nextEventAt = timelineStart; // first line fires the moment the timeline opens
       nextAmbientThoughtAt = timelineStart + 4;
       drawBoard();
     },
