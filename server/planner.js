@@ -318,6 +318,44 @@ function scorePackage(items, budget, seconds) {
   };
 }
 
+// --- Human-in-the-loop clarifying questions ------------------------------
+
+const CLARIFY_SYSTEM = `You are the Coordinator of SupplySwarm, a procurement swarm that sources a new business's equipment from Alibaba.com. Before you dispatch your specialists, you may ask the user 1-2 SHORT multiple-choice questions whose answers would genuinely change WHAT you source — quality tier, style/theme, a must-have priority, or a category to include or skip. Never ask about budget or location (already known). Ask only what materially changes the shopping list.
+Return STRICT JSON:
+{ "questions": [ { "agent": "<the specialist role that would ask, e.g. 'Espresso Lead', or 'Coordinator'>", "question": "<one clear question, <=90 chars>", "options": ["<2-4 short concrete choices>"] } ] }
+Ask at most 2 questions. Each option must be a short concrete choice (e.g. "Premium / commercial-grade"), not a sentence. If nothing genuinely needs clarifying, return {"questions": []}.`;
+
+/**
+ * Ask the Coordinator for a couple of clarifying multiple-choice questions,
+ * grounded in the brief. One focused Qwen call; returns [] if nothing matters.
+ */
+export async function clarifyingQuestions(text) {
+  const raw = await chatJSON({ system: CLARIFY_SYSTEM, user: text, temperature: 0.4, maxTokens: 400 });
+  const list = Array.isArray(raw?.questions) ? raw.questions : [];
+  return list.slice(0, 2).map(q => ({
+    agent: String(q?.agent || 'Coordinator').slice(0, 24),
+    question: String(q?.question || '').slice(0, 100),
+    options: (Array.isArray(q?.options) ? q.options : [])
+      .map(option => String(option).slice(0, 42)).filter(Boolean).slice(0, 4)
+  })).filter(q => q.question && q.options.length >= 2);
+}
+
+// Normalise the {question: answer} map the client returns into ordered lines.
+function answersList(answers) {
+  if (!answers || typeof answers !== 'object') return [];
+  return Object.entries(answers)
+    .filter(([q, a]) => q && a)
+    .slice(0, 3)
+    .map(([q, a]) => `${String(q).slice(0, 80)} → ${String(a).slice(0, 60)}`);
+}
+
+// A prompt fragment carrying the user's answers into every sourcing call.
+function answersBlock(answers) {
+  const lines = answersList(answers);
+  if (!lines.length) return '';
+  return `\n\nThe user answered the swarm's clarifying questions. Honour these choices when designing the team and sourcing every item:\n- ${lines.join('\n- ')}`;
+}
+
 /**
  * Generate a full procurement plan from a free-text brief.
  * Pipeline: Coordinator designs the team -> each specialist runs its own Qwen
@@ -328,15 +366,19 @@ function scorePackage(items, budget, seconds) {
  * the single-agent baseline is measured, not scripted.
  * Every event carries who -> to so the swarm visibly talks to each other.
  */
-export async function createPlan(text, onStage) {
+export async function createPlan(text, onStage, answers) {
   const planStart = Date.now();
+  // Human-in-the-loop: in "check in with me" mode the user answered the
+  // Coordinator's clarifying questions before sourcing. Those choices are
+  // injected into every prompt so they genuinely shape what the swarm buys.
+  const prefsBlock = answersBlock(answers);
   // Swarm memory: recall relevant past missions (deterministic keyword match)
   // and hand each agent its own experience before any Qwen call runs.
   const recalls = recallForBrief(text);
   const coordMemory = coordinatorMemory(recalls);
   const raw = await chatJSON({
     system: COORD_SYSTEM + memoryBlock(coordMemory),
-    user: text,
+    user: text + prefsBlock,
     temperature: 0.5
   });
 
@@ -381,20 +423,28 @@ export async function createPlan(text, onStage) {
     who: 'Coordinator', to: 'Swarm',
     text: `Brief validated: ${business}, £${budget.toLocaleString('en-GB')} ceiling. ${specialists.length} specialists dispatched to Alibaba.com.`
   });
+  // Make the human's steer visible in the swarm's own dialogue.
+  const answerLines = answersList(answers);
+  if (answerLines.length) {
+    events.push({
+      who: 'Coordinator', to: 'Swarm',
+      text: `Locking in your choices — ${answerLines.join('; ').slice(0, 96)}. Briefing every specialist to source accordingly.`
+    });
+  }
 
   // Every specialist searches Alibaba live, in parallel. A solo single-agent
   // control run starts at the same moment so the comparison is measured fairly.
   const searchStart = Date.now();
   const baselinePromise = timed(chatJSONWithSearch({
     system: baselineSystem(budget),
-    user: `Business brief: ${text}\nSearch the web now on alibaba.com for everything this business needs.`
+    user: `Business brief: ${text}${prefsBlock}\nSearch the web now on alibaba.com for everything this business needs.`
   }));
   const missions = await Promise.all(specialists.map(agent => {
     agent.lineBudget = Math.max(100, Math.round(productBudget * agent.share));
     agent.memory = specialistMemory(recalls, agent);
     return timed(chatJSONWithSearch({
       system: specialistSystem(agent.name, agent.focus, agent.lineBudget, business, agent.memory),
-      user: `Business brief: ${text}\nSearch the web now for: site:alibaba.com ${agent.query}`
+      user: `Business brief: ${text}${prefsBlock}\nSearch the web now for: site:alibaba.com ${agent.query}`
     }));
   }));
   const searchWallSeconds = (Date.now() - searchStart) / 1000;

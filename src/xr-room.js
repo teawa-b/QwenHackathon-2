@@ -71,6 +71,65 @@ function makeBubbleSprite(text, accent, kind = 'speech') {
   return sprite;
 }
 
+// Wrap a string to at most `max` lines of ~`width` chars, ellipsising overflow.
+function wrapLines(text, width, max) {
+  const words = String(text).split(' ');
+  const lines = [''];
+  for (const word of words) {
+    const candidate = lines[lines.length - 1] ? `${lines[lines.length - 1]} ${word}` : word;
+    if (candidate.length > width && lines[lines.length - 1]) {
+      if (lines.length === max) { lines[max - 1] = lines[max - 1].slice(0, width - 1) + '…'; break; }
+      lines.push(word);
+    } else {
+      lines[lines.length - 1] = candidate;
+    }
+  }
+  return lines;
+}
+
+// Header sprite that sits above a set of choice panels — who is asking + the
+// question itself, so a human-in-the-loop prompt reads clearly in VR.
+function makeChoiceTitleSprite(headline, question, accent) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024; canvas.height = 300;
+  const ctx = canvas.getContext('2d');
+  const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = accentCss; ctx.font = '700 40px sans-serif';
+  ctx.fillText(headline.toUpperCase(), 512, 58);
+  ctx.fillStyle = '#e8ecf4'; ctx.font = '700 56px sans-serif';
+  const lines = wrapLines(question, 34, 2);
+  lines.forEach((line, i) => ctx.fillText(line, 512, 140 + i * 66));
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+  sprite.scale.set(3.2, 0.94, 1);
+  return sprite;
+}
+
+// A single selectable choice panel (an option button, or the mode-picker card).
+function makeChoiceOptionSprite(label, sub, accent) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 236;
+  const ctx = canvas.getContext('2d');
+  const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
+  ctx.fillStyle = 'rgba(13,20,36,.95)';
+  ctx.beginPath(); ctx.roundRect(8, 8, 496, 220, 30); ctx.fill();
+  ctx.strokeStyle = accentCss; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.roundRect(8, 8, 496, 220, 30); ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#e8ecf4'; ctx.font = '700 48px sans-serif';
+  const lines = wrapLines(label, 15, 2);
+  const baseY = sub ? (lines.length === 1 ? 110 : 86) : (lines.length === 1 ? 132 : 108);
+  lines.forEach((line, i) => ctx.fillText(line, 256, baseY + i * 54));
+  if (sub) { ctx.fillStyle = accentCss; ctx.font = '600 28px sans-serif'; ctx.fillText(sub, 256, 196); }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+  sprite.scale.set(1.5, 0.69, 1);
+  return sprite;
+}
+
 function buildBot(accent, scale = 1) {
   const bot = new THREE.Group();
   const trim = new THREE.MeshStandardMaterial({ color: TRIM, roughness: .6 });
@@ -258,6 +317,73 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     sfx.play('event', 0.35);
   }
 
+  // --- In-scene choice panels (mode picker + agent questions) --------------
+  // A modal-ish set of selectable panels the user can point-and-select in VR
+  // or click on desktop. One code path serves both the "full autonomy vs check
+  // in with me" picker and the agents' clarifying questions.
+  let choicePanels = [];        // { sprite, value, onPick }
+  let choiceTitleSprite = null;
+  let choiceModal = false;      // modal choices swallow other interactions
+  let choiceResolve = null;
+  let choiceDefault = null;
+
+  function disposeSprite(sprite) {
+    sprite.removeFromParent();
+    sprite.material.map?.dispose();
+    sprite.material.dispose();
+  }
+
+  function clearChoice() {
+    for (const panel of choicePanels) disposeSprite(panel.sprite);
+    choicePanels = [];
+    if (choiceTitleSprite) { disposeSprite(choiceTitleSprite); choiceTitleSprite = null; }
+  }
+
+  // Resolve the open choice (a pick, or a dismissal with the default value).
+  function settleChoice(value) {
+    const resolve = choiceResolve;
+    choiceResolve = null; choiceModal = false;
+    clearChoice();
+    resolve?.(value);
+  }
+
+  /**
+   * Open a choice: a title header + one selectable panel per option, arranged
+   * in an arc in front of the coordinator, facing the viewer. Resolves with the
+   * picked option's value (or `defaultValue` if dismissed).
+   */
+  function openChoice({ headline, question, options, modal = true, defaultValue = null }) {
+    clearChoice();
+    choiceModal = modal;
+    choiceDefault = defaultValue;
+    choiceTitleSprite = makeChoiceTitleSprite(headline, question, LIME);
+    choiceTitleSprite.position.set(0, 2.85, 2.7);
+    world.add(choiceTitleSprite);
+    const n = options.length;
+    const spacing = Math.min(1.62, 6.4 / Math.max(1, n));
+    options.forEach((option, i) => {
+      const accent = option.skip ? 0x8d97ad : ACCENTS[i % ACCENTS.length];
+      const sprite = makeChoiceOptionSprite(option.label, option.sub, accent);
+      const x = (i - (n - 1) / 2) * spacing;
+      sprite.position.set(x, 1.78, 2.75);
+      world.add(sprite);
+      choicePanels.push({ sprite, value: option.value, onPick: () => { sfx.play('event', 0.4); settleChoice(option.value); } });
+    });
+    return new Promise(resolve => { choiceResolve = resolve; });
+  }
+
+  // Try to resolve a click/select against the open choice panels. Returns true
+  // if the interaction was consumed (a pick, or a modal swallow).
+  function handleChoiceHit() {
+    if (!choicePanels.length) return false;
+    for (const panel of choicePanels) {
+      if (raycaster.intersectObject(panel.sprite).length) { panel.onPick(); return true; }
+    }
+    if (choiceModal) return true;      // modal: ignore anything but a valid pick
+    settleChoice(choiceDefault);       // non-modal: a click elsewhere dismisses
+    return false;                      // let that click fall through to normal handling
+  }
+
   function drawPhoneCode() {
     const ctx = codeCtx;
     ctx.clearRect(0, 0, 640, 224);
@@ -407,6 +533,8 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     const rect = renderer.domElement.getBoundingClientRect();
     pointerVec.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointerVec, camera);
+    // An open choice (mode picker / agent question) intercepts clicks first.
+    if (choicePanels.length) { if (handleChoiceHit()) return; }
     if (viewButton?.visible && raycaster.intersectObject(viewButton).length) {
       callbacks.onViewPlan?.();
       return;
@@ -501,16 +629,21 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     if (hitTestSource) { hitTestSource.cancel?.(); hitTestSource = null; }
   }
   const controllerRotation = new THREE.Matrix4();
-  function controllerHitsCoordinator(controller) {
+  function setControllerRay(controller) {
     controllerRotation.identity().extractRotation(controller.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(controllerRotation);
+  }
+  function controllerHitsCoordinator(controller) {
+    setControllerRay(controller);
     return raycaster.intersectObject(coordinator, true).length > 0;
   }
   const onSelectStart = event => {
     const controller = event.target;
     // In passthrough AR the first trigger/tap places the room on the surface.
     if (arMode && !arPlaced) { placeWorldAtReticle(); return; }
+    // An open choice (mode picker / agent question) intercepts selection first.
+    if (choicePanels.length) { setControllerRay(controller); if (handleChoiceHit()) return; }
     if (controllerHitsCoordinator(controller)) {
       controller.userData.holdingCoordinator = true;
       sfx.play('hold', 0.55);
@@ -1155,6 +1288,40 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       showBubble(coordEntity, String(text), timer.getElapsed(), 'thought', 3.2);
     },
     /**
+     * Ask the user, in-scene, how the swarm should work. Resolves true for
+     * "check in with me" (human-in-the-loop) or false for full autonomy.
+     * Non-modal: starting a brief without choosing defaults to autonomy.
+     */
+    chooseMode() {
+      return openChoice({
+        headline: 'Before we start',
+        question: 'How should the swarm work?',
+        modal: false,
+        defaultValue: false,
+        options: [
+          { label: 'Full autonomy', sub: 'agents decide everything', value: false },
+          { label: 'Check in with me', sub: 'agents ask you questions', value: true }
+        ]
+      });
+    },
+    /**
+     * Put one of the Coordinator's clarifying questions to the user in-scene.
+     * Resolves with the chosen option string, or null if they let the agents
+     * decide. Modal — the swarm waits on the answer.
+     */
+    askQuestion(question) {
+      const headline = question.agent ? `${question.agent} asks` : 'The swarm asks';
+      const options = [
+        ...(question.options || []).map(option => ({ label: option, value: option })),
+        { label: 'Let the agents decide', sub: 'skip', value: null, skip: true }
+      ];
+      statusText = 'ANSWER THE SWARM — OR LET THE AGENTS DECIDE';
+      drawBoard();
+      return openChoice({ headline, question: question.question, options, modal: true, defaultValue: null });
+    },
+    /** Close any open choice (e.g. the mode picker) with its default value. */
+    dismissChoice() { if (choicePanels.length) settleChoice(choiceDefault); },
+    /**
      * Beam the specialist team in one-by-one while they search Alibaba, before
      * the full plan is ready. Called with the roster streamed from the server
      * the moment the Coordinator designs it.
@@ -1173,6 +1340,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     /** Start the swarm run. Call once, after the user has given their brief. */
     begin(scenario, timeline, newBrief, runSummary) {
       if (timelineStart >= 0) return;
+      if (choicePanels.length) settleChoice(choiceDefault); // clear any open prompt
       if (sameRoster(scenario.agents)) {
         // The team already beamed in during planning — reuse those robots and
         // top them up with the genuine reasoning the searches produced.
@@ -1220,6 +1388,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     },
     dispose() {
       disposed = true;
+      if (choiceResolve) settleChoice(choiceDefault); // resolve any awaiter
       sfx.stopMusic();
       renderer.setAnimationLoop(null);
       if (hitTestSource) { hitTestSource.cancel?.(); hitTestSource = null; }

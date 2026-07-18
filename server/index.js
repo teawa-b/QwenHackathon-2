@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MODELS, liveMode, transcribe, generateImage, QwenError } from './qwen.js';
-import { createPlan } from './planner.js';
+import { createPlan, clarifyingQuestions } from './planner.js';
 import { memorySummary } from './memory.js';
 import { attachLive } from './live.js';
 
@@ -37,10 +37,23 @@ app.post('/api/plan', asyncRoute(async (req, res) => {
   res.json(plan);
 }));
 
+// "Check in with me" mode: the Coordinator asks 1-2 clarifying multiple-choice
+// questions before sourcing, so the human can steer what the swarm buys.
+app.post('/api/clarify', asyncRoute(async (req, res) => {
+  const text = String(req.body?.text || '').trim();
+  if (!text || text.length > 1200) {
+    return res.status(400).json({ error: 'Provide a business brief between 1 and 1200 characters.' });
+  }
+  if (!liveMode()) return res.status(503).json({ error: 'Live mode is not configured.' });
+  const questions = await clarifyingQuestions(text);
+  res.json({ questions });
+}));
+
 // Streaming variant: emits NDJSON stages as they happen. The Coordinator's
 // specialist roster is streamed the moment it is designed (a `roster` line),
 // so the 3D room can beam each specialist in one-by-one while they search,
-// then the full `plan` line arrives once every search has returned.
+// then the full `plan` line arrives once every search has returned. Optional
+// `answers` carry the user's clarifying-question choices into the sourcing.
 app.post('/api/plan/stream', (req, res) => {
   (async () => {
     const text = String(req.body?.text || '').trim();
@@ -48,11 +61,12 @@ app.post('/api/plan/stream', (req, res) => {
       return res.status(400).json({ error: 'Provide a business brief between 1 and 1200 characters.' });
     }
     if (!liveMode()) return res.status(503).json({ error: 'Live mode is not configured.' });
+    const answers = req.body?.answers && typeof req.body.answers === 'object' ? req.body.answers : null;
     res.set('Content-Type', 'application/x-ndjson');
     res.set('Cache-Control', 'no-cache, no-transform');
     res.set('X-Accel-Buffering', 'no'); // don't let a reverse proxy buffer the stream
     const write = obj => res.write(JSON.stringify(obj) + '\n');
-    const plan = await createPlan(text, write);
+    const plan = await createPlan(text, write, answers);
     write({ type: 'plan', plan });
     res.end();
   })().catch(err => {

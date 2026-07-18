@@ -79,7 +79,7 @@ const scenarios = {
   }
 };
 
-const state = { phase: 'brief', scenario: scenarios.studio, budget: 10000, city: 'Coventry', team: 4, running: false, plan: null, conceptImage: null };
+const state = { phase: 'brief', scenario: scenarios.studio, budget: 10000, city: 'Coventry', team: 4, running: false, plan: null, conceptImage: null, interactive: false };
 
 const api = {
   live: false,
@@ -116,11 +116,12 @@ const api = {
   // Stream the plan as NDJSON. `onStage` fires for each intermediate stage
   // (notably `roster`, the designed specialist team) before the full plan
   // resolves as this promise's value.
-  async planStream(text, onStage) {
+  clarify(text) { return this.request('/api/clarify', { text }); },
+  async planStream(text, onStage, answers) {
     const response = await fetch('/api/plan/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify(answers ? { text, answers } : { text })
     });
     if (!response.ok || !response.body) {
       const body = await response.json().catch(() => ({}));
@@ -649,10 +650,16 @@ function showAbout() {
 
 const PHASE_NAMES = ['VALIDATING BRIEF', 'SPAWNING SPECIALISTS', 'SOURCING CANDIDATES', 'VERIFYING SUPPLIERS', 'CALCULATING LANDED COST', 'CRITIC REVIEW', 'REVISING PACKAGE', 'FINAL VERIFICATION', 'COMPLETE'];
 
-function buildEvents() {
+function buildEvents(answers) {
   // 5th field marks working steps that render as thought bubbles over the
   // robot's head in the 3D room, keeping the board for actual dialogue.
+  const answerLines = answers && typeof answers === 'object'
+    ? Object.entries(answers).filter(([q, a]) => q && a).slice(0, 2) : [];
+  const lead = answerLines.length
+    ? [['Coordinator', `Locking in your choices — ${answerLines.map(([, a]) => a).join(', ')}. Briefing the specialists to source accordingly.`, 6, 'Swarm', 'talk']]
+    : [];
   return [
+    ...lead,
     ['Coordinator', 'Structured brief validated. No blocking questions.', 8, 'Swarm', 'talk'],
     [state.scenario.agents[0][1], `Searching ${state.scenario.items[0][0].toLowerCase()} candidates…`, 20, 'Coordinator', 'think'],
     [state.scenario.agents[1][1], 'Rejected 9 listings with incompatible specifications.', 34, 'Coordinator', 'talk'],
@@ -918,6 +925,18 @@ async function runSwarm3D() {
   // it into the scene now so it shows in VR/AR without waiting for the next one.
   if (live.code) room.setPhoneCode(live.code);
 
+  // Ask, right at the start, whether the swarm runs autonomously or checks in
+  // with the user. In-scene so it works in VR/AR and on desktop alike; picking
+  // "check in" makes the agents ask clarifying questions before they source.
+  room.chooseMode().then(interactive => {
+    state.interactive = interactive;
+    if (!state.running) {
+      room.setStatus(interactive
+        ? 'Check-in mode — the agents will ask before sourcing. Hold me and speak, or type below'
+        : 'Full autonomy — hold me and speak, or type your business brief below');
+    }
+  });
+
   room.callbacks.onEvent = ({ who, to, text, progress, phase, kind }) => {
     live.send({ type: 'event', event: [who, text, progress, to || '', kind || 'talk'] });
     live.send({ type: 'status', status: { text, phase, progress } });
@@ -954,6 +973,60 @@ async function runSwarm3D() {
     if (label) label.textContent = text;
   };
 
+  // A couple of clarifying questions for demo mode (no Qwen key), grounded in
+  // the parsed scenario so the human-in-the-loop is demonstrable without live.
+  function demoClarifyQuestions() {
+    const agents = state.scenario.agents || [];
+    const questions = [{
+      agent: 'Coordinator',
+      question: 'What quality tier should the swarm target?',
+      options: ['Budget', 'Balanced', 'Premium']
+    }];
+    const focuses = agents.slice(0, 3)
+      .map(a => String(a[2] || '').split(/[,/]/)[0].replace(/[^a-z0-9 ]/gi, ' ').replace(/\s+/g, ' ').trim())
+      .map(f => f.split(' ').slice(0, 2).join(' '))
+      .filter(Boolean);
+    if (focuses.length >= 2) {
+      questions.push({
+        agent: agents[0]?.[1] || 'Coordinator',
+        question: 'Which capability should we prioritise first?',
+        options: focuses
+      });
+    }
+    return questions.slice(0, 2);
+  }
+
+  // Check-in mode: the Coordinator asks a couple of clarifying multiple-choice
+  // questions in-scene; the answers are returned to feed the live sourcing
+  // (live mode) or to steer the demo dialogue (demo mode).
+  async function collectClarifications(text) {
+    room.setStatus('The coordinator has a couple of questions for you…');
+    live.send({ type: 'status', status: { text: 'Coordinator is preparing clarifying questions…', phase: 'CLARIFYING', progress: 6 } });
+    let questions = [];
+    if (api.live) {
+      try {
+        const result = await api.clarify(text);
+        questions = Array.isArray(result?.questions) ? result.questions.slice(0, 2) : [];
+      } catch (err) {
+        console.warn('Clarify failed, proceeding autonomously:', err.message);
+        return null;
+      }
+    } else {
+      questions = demoClarifyQuestions();
+    }
+    if (!questions.length) return null;
+    const answers = {};
+    for (const question of questions) {
+      const picked = await room.askQuestion(question);
+      if (picked) {
+        answers[question.question] = picked;
+        // Surface the human's steer in the feed / companion as a real exchange.
+        live.send({ type: 'event', event: ['You', `${question.question} → ${picked}`, 7, question.agent || 'Coordinator', 'talk'] });
+      }
+    }
+    return Object.keys(answers).length ? answers : null;
+  }
+
   async function beginRun(text) {
     const trimmed = (text || '').trim();
     if (state.running) return;
@@ -963,6 +1036,7 @@ async function runSwarm3D() {
       return;
     }
     state.running = true;
+    room.dismissChoice?.(); // close the mode picker if it is still open
     const ask = document.querySelector('#xr-ask');
     if (ask) ask.hidden = true;
     parseBrief(trimmed);
@@ -972,6 +1046,10 @@ async function runSwarm3D() {
       agents: [],
       status: { text: 'Qwen Coordinator is planning…', phase: 'PLANNING', progress: 4 }
     });
+    // Human-in-the-loop: in check-in mode, gather the user's answers to the
+    // agents' questions first — they shape the live sourcing, and steer the
+    // demo dialogue when no key is configured.
+    const answers = state.interactive ? await collectClarifications(trimmed) : null;
     if (api.live) {
       setPhase('QWEN COORDINATOR PLANNING');
       let lineIndex = 0;
@@ -1002,7 +1080,7 @@ async function runSwarm3D() {
               status: { text: 'Specialists searching Alibaba.com live…', phase: 'SEARCHING', progress: 14 }
             });
           }
-        });
+        }, answers);
         clearInterval(ticker);
         applyPlan(plan);
         setHudBrief('live Qwen plan');
@@ -1026,12 +1104,12 @@ async function runSwarm3D() {
         console.warn('Live planning failed:', err.message);
         live.send({ type: 'agents', agents: state.scenario.agents });
         await wait(1600);
-        room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget }, planSummary(buildDemoPlan()));
+        room.begin(state.scenario, buildEvents(answers), { type: state.scenario.type, budget: state.budget }, planSummary(buildDemoPlan()));
       }
     } else {
       setHudBrief('demo catalogue');
       live.send({ type: 'agents', agents: state.scenario.agents });
-      room.begin(state.scenario, buildEvents(), { type: state.scenario.type, budget: state.budget }, planSummary(buildDemoPlan()));
+      room.begin(state.scenario, buildEvents(answers), { type: state.scenario.type, budget: state.budget }, planSummary(buildDemoPlan()));
     }
   }
 
