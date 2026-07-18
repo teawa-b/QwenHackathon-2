@@ -37,6 +37,39 @@ app.post('/api/plan', asyncRoute(async (req, res) => {
   res.json(plan);
 }));
 
+// Streaming variant: emits NDJSON stages as they happen. The Coordinator's
+// specialist roster is streamed the moment it is designed (a `roster` line),
+// so the 3D room can beam each specialist in one-by-one while they search,
+// then the full `plan` line arrives once every search has returned.
+app.post('/api/plan/stream', (req, res) => {
+  (async () => {
+    const text = String(req.body?.text || '').trim();
+    if (!text || text.length > 1200) {
+      return res.status(400).json({ error: 'Provide a business brief between 1 and 1200 characters.' });
+    }
+    if (!liveMode()) return res.status(503).json({ error: 'Live mode is not configured.' });
+    res.set('Content-Type', 'application/x-ndjson');
+    res.set('Cache-Control', 'no-cache, no-transform');
+    res.set('X-Accel-Buffering', 'no'); // don't let a reverse proxy buffer the stream
+    const write = obj => res.write(JSON.stringify(obj) + '\n');
+    const plan = await createPlan(text, write);
+    write({ type: 'plan', plan });
+    res.end();
+  })().catch(err => {
+    const status = err.status || 500;
+    const message = err instanceof QwenError ? err.message : 'Internal error';
+    console.error(`[api] POST /api/plan/stream failed:`, err.message);
+    if (res.headersSent) {
+      // The roster was already streamed — report the failure as a trailing line
+      // so the client can fall back cleanly instead of hanging.
+      try { res.write(JSON.stringify({ type: 'error', error: message }) + '\n'); } catch { /* socket gone */ }
+      res.end();
+    } else {
+      res.status(status).json({ error: message });
+    }
+  });
+});
+
 app.post('/api/transcribe', asyncRoute(async (req, res) => {
   const { audio, mime } = req.body || {};
   if (!audio || typeof audio !== 'string') {
