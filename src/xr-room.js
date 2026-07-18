@@ -192,6 +192,40 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   );
   halo.rotation.x = -Math.PI / 2; halo.position.y = 0.05; world.add(halo);
 
+  // Phone-link code, rendered inside the 3D scene so it is readable from inside
+  // an immersive VR/AR session (the DOM chip is invisible there). Floats above
+  // the coordinator — the robot the user holds and looks at — and always faces
+  // the viewer. Hidden until the session registers and a code arrives.
+  let phoneCode = '';
+  const codeHost = (typeof window !== 'undefined' && window.location?.host) || '';
+  const codeCanvas = document.createElement('canvas');
+  codeCanvas.width = 640; codeCanvas.height = 224;
+  const codeCtx = codeCanvas.getContext('2d');
+  const codeTexture = new THREE.CanvasTexture(codeCanvas);
+  codeTexture.colorSpace = THREE.SRGBColorSpace;
+  const codeSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: codeTexture, transparent: true, depthWrite: false }));
+  codeSprite.scale.set(1.6, 0.56, 1);
+  codeSprite.position.set(0, 3.05, 0);
+  codeSprite.visible = false;
+  world.add(codeSprite);
+
+  function drawPhoneCode() {
+    const ctx = codeCtx;
+    ctx.clearRect(0, 0, 640, 224);
+    ctx.fillStyle = 'rgba(13,20,36,.9)';
+    ctx.beginPath(); ctx.roundRect(6, 6, 628, 212, 22); ctx.fill();
+    ctx.strokeStyle = 'rgba(90,212,194,.7)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.roundRect(6, 6, 628, 212, 22); ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#5ad4c2'; ctx.font = '700 34px sans-serif';
+    ctx.fillText('PHONE LINK', 320, 58);
+    ctx.fillStyle = '#e8ecf4'; ctx.font = '700 92px sans-serif';
+    ctx.fillText(phoneCode, 320, 148);
+    ctx.fillStyle = '#8d97ad'; ctx.font = '600 24px sans-serif';
+    ctx.fillText(`${codeHost}/connect`, 320, 194);
+    codeTexture.needsUpdate = true;
+  }
+
   // Status board
   const boardCanvas = document.createElement('canvas');
   boardCanvas.width = 1024; boardCanvas.height = 576;
@@ -210,6 +244,8 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
 
   // Run state — nothing plays until begin() is called
   let specialists = [];
+  let teamRevealed = false;   // roster beamed in during planning, before the timeline
+  let revealQueue = [];       // pending one-by-one specialist entrances
   let events = [];
   let timelineStart = -1;
   let eventIndex = 0;
@@ -246,6 +282,11 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         ? [statusText.slice(0, statusText.lastIndexOf(' ', 52)), statusText.slice(statusText.lastIndexOf(' ', 52) + 1)]
         : [statusText];
       lines.forEach((line, i) => ctx.fillText(line, 512, 330 + i * 38));
+      if (phoneCode) {
+        // Pairing happens here — show the phone-link code big on the board.
+        ctx.fillStyle = '#5ad4c2'; ctx.font = '700 26px sans-serif';
+        ctx.fillText(`PHONE LINK  ${phoneCode}  ·  ${codeHost}/connect`, 512, 448);
+      }
       ctx.fillStyle = '#626d84'; ctx.font = '600 20px sans-serif';
       ctx.fillText('TELL ME YOUR BUSINESS, BUDGET AND LOCATION', 512, 500);
       ctx.textAlign = 'left';
@@ -369,7 +410,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   reticle.visible = false;
   scene.add(reticle);
 
-  const AR_SCALE = 0.42; // tabletop-friendly miniature of the ops room
+  const AR_SCALE = 0.27; // tabletop-friendly miniature — sits comfortably on a desk in front of you
 
   function placeWorldAtReticle() {
     if (!reticle.visible) return false;
@@ -628,6 +669,50 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     sfx.play('spawn', 0.5);
   }
 
+  function findSpecialist(agent) {
+    const code = String(agent[0] || '').toLowerCase();
+    const name = String(agent[1] || '').toLowerCase();
+    return specialists.find(s => s.code.toLowerCase() === code || s.name.toLowerCase() === name);
+  }
+
+  // Does the already-revealed roster match the final plan's agents? (Same run =
+  // same order and codes, so we can reuse the beamed-in robots.)
+  function sameRoster(agents) {
+    if (!teamRevealed || !Array.isArray(agents) || specialists.length !== agents.length) return false;
+    return agents.every((agent, i) =>
+      String(agent[0]) === specialists[i].code && String(agent[1]) === specialists[i].name);
+  }
+
+  function disposeSpecialists() {
+    for (const s of specialists) {
+      for (let b = bubbles.length - 1; b >= 0; b--) if (bubbles[b].entity === s) removeBubble(b);
+      for (const obj of [s.bot, s.label, s.link, s.pulse, s.beam]) {
+        obj.removeFromParent();
+        obj.geometry?.dispose?.();
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(m => { m?.map?.dispose?.(); m?.dispose?.(); });
+      }
+    }
+    specialists = [];
+    revealQueue = [];
+  }
+
+  // Once the real searches return, refresh the reused robots with each agent's
+  // genuine Qwen reasoning steps and recalled memory for their thought bubbles.
+  function refreshSpecialists(agents) {
+    for (const agent of agents) {
+      const s = findSpecialist(agent);
+      if (!s) continue;
+      const genuine = (Array.isArray(agent[3]) ? agent[3] : []).map(String).filter(Boolean).slice(0, 3);
+      const memory = (Array.isArray(agent[4]) ? agent[4] : [])
+        .map(line => `Remembering: ${String(line).slice(0, 82)}`).slice(0, 2);
+      if (genuine.length || memory.length) {
+        s.thoughts = [...memory, ...(genuine.length ? genuine : s.thoughts)];
+        s.thoughtIndex = 0;
+      }
+    }
+  }
+
   function removeBubble(index) {
     const bubble = bubbles[index];
     bubble.sprite.removeFromParent();
@@ -800,6 +885,18 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       }
     }
 
+    // Staggered team entrance during planning: each specialist beams in on its
+    // own beat and flashes a "searching" thought so the swarm assembles visibly
+    // while the real Alibaba searches run.
+    while (revealQueue.length && elapsed >= revealQueue[0].revealAt) {
+      const s = revealQueue.shift();
+      if (!s.active) {
+        spawnSpecialist(s, elapsed);
+        const thought = s.thoughts?.[0] || `Searching Alibaba for ${s.focus.toLowerCase()}…`;
+        showBubble(s, thought, elapsed, 'thought', 3.8);
+      }
+    }
+
     if (timelineStart >= 0 && eventIndex < events.length && elapsed > timelineStart + eventIndex * EVENT_GAP) {
       fireEvent(eventIndex, elapsed);
       eventIndex++;
@@ -815,6 +912,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
 
     coordinator.position.y = Math.sin(elapsed * 1.6) * 0.05;
     coordinator.rotation.y = Math.sin(elapsed * 0.5) * 0.25;
+    if (codeSprite.visible) codeSprite.position.y = 3.05 + Math.sin(elapsed * 1.4) * 0.04;
     hubLight.intensity = listening ? 13 + Math.sin(elapsed * 9) * 4 : 7 + Math.sin(elapsed * 3) * 2;
     if (listening) {
       halo.material.opacity = 0.5 + Math.sin(elapsed * 7) * 0.3;
@@ -976,10 +1074,35 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       if (timelineStart >= 0) return;
       showBubble(coordEntity, String(text), timer.getElapsed(), 'thought', 3.2);
     },
+    /**
+     * Beam the specialist team in one-by-one while they search Alibaba, before
+     * the full plan is ready. Called with the roster streamed from the server
+     * the moment the Coordinator designs it.
+     */
+    revealTeam(agents) {
+      if (timelineStart >= 0 || teamRevealed || !Array.isArray(agents) || !agents.length) return;
+      teamRevealed = true;
+      specialists = buildSpecialists(agents);
+      const now = timer.getElapsed();
+      // Stagger the entrances so they arrive one after another, not in a clump.
+      specialists.forEach((s, i) => { s.revealAt = now + 0.6 + i * 0.85; });
+      revealQueue = specialists.map(s => s).sort((a, b) => a.revealAt - b.revealAt);
+      statusText = '';
+      drawBoard();
+    },
     /** Start the swarm run. Call once, after the user has given their brief. */
     begin(scenario, timeline, newBrief, runSummary) {
       if (timelineStart >= 0) return;
-      specialists = buildSpecialists(scenario.agents);
+      if (sameRoster(scenario.agents)) {
+        // The team already beamed in during planning — reuse those robots and
+        // top them up with the genuine reasoning the searches produced.
+        refreshSpecialists(scenario.agents);
+      } else {
+        if (teamRevealed) disposeSpecialists();
+        specialists = buildSpecialists(scenario.agents);
+      }
+      teamRevealed = false;
+      revealQueue = [];
       // Recalled swarm memory becomes the Coordinator's opening thoughts.
       if (Array.isArray(scenario.coordThoughts) && scenario.coordThoughts.length) {
         coordEntity.thoughts = [...scenario.coordThoughts, ...coordEntity.thoughts];
@@ -1000,6 +1123,13 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     setStatus(text) {
       if (timelineStart >= 0) return;
       statusText = String(text).toUpperCase();
+      drawBoard();
+    },
+    /** Show the phone-pairing code inside the room (visible in VR/AR). */
+    setPhoneCode(code) {
+      phoneCode = String(code || '').toUpperCase();
+      if (phoneCode) { drawPhoneCode(); codeSprite.visible = true; }
+      else { codeSprite.visible = false; }
       drawBoard();
     },
     setListening(value) {

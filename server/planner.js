@@ -328,7 +328,7 @@ function scorePackage(items, budget, seconds) {
  * the single-agent baseline is measured, not scripted.
  * Every event carries who -> to so the swarm visibly talks to each other.
  */
-export async function createPlan(text) {
+export async function createPlan(text, onStage) {
   const planStart = Date.now();
   // Swarm memory: recall relevant past missions (deterministic keyword match)
   // and hand each agent its own experience before any Qwen call runs.
@@ -354,6 +354,20 @@ export async function createPlan(text) {
     code: 'RISK', name: 'Critic', focus: 'Risk & budget control',
     thoughts: ['Watching the landed-cost ceiling…', 'Hunting for weak evidence labels…', 'Ready to cut nice-to-haves if we run hot…']
   };
+
+  // The Coordinator has now designed the team — stream the roster to the client
+  // the moment it exists, so the room can beam each specialist in one-by-one
+  // while they actually search Alibaba, instead of everyone popping in at the
+  // end. The slow parallel searches below happen after this point.
+  try {
+    onStage?.({
+      type: 'roster',
+      business,
+      budget,
+      agents: [...specialists, supplierAgent, criticAgent]
+        .map(agent => [agent.code, agent.name, agent.focus, [], agent.memory || []])
+    });
+  } catch { /* streaming is best-effort; the full plan is still returned below */ }
 
   const productBudget = Math.round(budget * PRODUCT_BUDGET_RATIO);
   const events = [];

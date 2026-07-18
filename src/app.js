@@ -113,6 +113,42 @@ const api = {
     return response.json();
   },
   plan(text) { return this.request('/api/plan', { text }); },
+  // Stream the plan as NDJSON. `onStage` fires for each intermediate stage
+  // (notably `roster`, the designed specialist team) before the full plan
+  // resolves as this promise's value.
+  async planStream(text, onStage) {
+    const response = await fetch('/api/plan/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    if (!response.ok || !response.body) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed (${response.status})`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let plan = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (!line) continue;
+        let stage;
+        try { stage = JSON.parse(line); } catch { continue; }
+        if (stage.type === 'plan') plan = stage.plan;
+        else if (stage.type === 'error') throw new Error(stage.error || 'Planning failed');
+        else { try { onStage?.(stage); } catch { /* a reveal hiccup must not abort planning */ } }
+      }
+    }
+    if (!plan) throw new Error('Planning stream ended before a plan arrived');
+    return plan;
+  },
   transcribe(audio, mime) { return this.request('/api/transcribe', { audio, mime }); },
   image(payload) { return this.request('/api/image', payload); }
 };
@@ -821,6 +857,9 @@ async function runSwarm3D() {
   // watch every agent live and send requests into the room.
   const live = createHostLink();
   live.onCode = code => {
+    // Mirror the pairing code into the 3D scene so it is readable inside an
+    // immersive VR/AR session, where the DOM chip below is not rendered.
+    room?.setPhoneCode(code);
     const chip = document.querySelector('#xr-code');
     const value = document.querySelector('#xr-code-value');
     if (chip && value) {
@@ -874,6 +913,10 @@ async function runSwarm3D() {
     },
     onExit: null
   });
+
+  // If the pairing code already arrived before the room finished loading, push
+  // it into the scene now so it shows in VR/AR without waiting for the next one.
+  if (live.code) room.setPhoneCode(live.code);
 
   room.callbacks.onEvent = ({ who, to, text, progress, phase, kind }) => {
     live.send({ type: 'event', event: [who, text, progress, to || '', kind || 'talk'] });
@@ -942,8 +985,24 @@ async function runSwarm3D() {
         room.hubThink(line);
         live.send({ type: 'status', status: { text: line, phase: 'PLANNING', progress: Math.min(16, 4 + lineIndex * 2) } });
       }, 2400);
+      let teamRevealed = false;
       try {
-        const plan = await api.plan(trimmed);
+        const plan = await api.planStream(trimmed, stage => {
+          // The Coordinator finished designing the team — beam the specialists
+          // into the room one-by-one while they run their live Alibaba searches,
+          // instead of leaving the user staring at a lone coordinator.
+          if (stage.type === 'roster' && !teamRevealed && Array.isArray(stage.agents)) {
+            teamRevealed = true;
+            clearInterval(ticker); // planning chatter gives way to the arriving team
+            room.revealTeam(stage.agents);
+            room.setStatus('Specialists searching Alibaba.com live…');
+            live.send({
+              type: 'agents',
+              agents: stage.agents,
+              status: { text: 'Specialists searching Alibaba.com live…', phase: 'SEARCHING', progress: 14 }
+            });
+          }
+        });
         clearInterval(ticker);
         applyPlan(plan);
         setHudBrief('live Qwen plan');
