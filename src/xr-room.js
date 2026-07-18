@@ -369,7 +369,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   reticle.visible = false;
   scene.add(reticle);
 
-  const AR_SCALE = 0.42; // tabletop-friendly miniature of the ops room
+  const AR_SCALE = 0.27; // tabletop-friendly miniature — sits comfortably on a desk in front of you
 
   function placeWorldAtReticle() {
     if (!reticle.visible) return false;
