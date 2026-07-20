@@ -11,12 +11,18 @@ The judge-facing demo may remain on its existing HTTPS URL, but the hackathon's 
 
 ## Recommended service
 
-Use **Simple Application Server** with the Docker application image for the fastest setup. A small CPU instance is sufficient because inference runs through Qwen Cloud APIs; no GPU is required.
+Use **Simple Application Server** with Ubuntu 24.04 for the fastest setup. A small CPU instance is sufficient because inference runs through Qwen Cloud APIs; no GPU is required.
 
-1. Create an Alibaba Cloud Simple Application Server using the Docker image.
+1. Create an Alibaba Cloud Simple Application Server using Ubuntu 24.04.
 2. Open inbound HTTP port `80`. Restrict SSH port `22` to your own IP.
 3. Connect through Workbench.
-4. Run:
+4. Run the idempotent bootstrap script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/teawa-b/QwenHackathon-2/main/deploy/alibaba-cloud/bootstrap.sh | sudo bash
+```
+
+Alternatively, deploy manually:
 
 ```bash
 git clone https://github.com/teawa-b/QwenHackathon-2.git
@@ -29,6 +35,8 @@ curl http://127.0.0.1/api/health
 ```
 
 Set the real `DASHSCOPE_API_KEY`, the instance region, and the deployed Git commit in `.env`. Do not paste the key into screenshots, commits, logs, or the Devpost form.
+
+When `DASHSCOPE_API_KEY` is omitted, the Alibaba-hosted application still starts in its clearly labelled demo mode. To run live Qwen calls from this instance, export the key only for the bootstrap command (or add it directly to the server-side `.env`) and redeploy; never commit it.
 
 ## Public verification
 

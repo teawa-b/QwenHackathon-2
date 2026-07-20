@@ -4,12 +4,12 @@ SupplySwarm's production backend is packaged for **Alibaba Cloud ECS / Simple Ap
 
 ## Public deployment
 
-Deployment is being completed before the submission deadline. Replace the placeholders below only after the Alibaba Cloud instance is live and independently verified.
+The Alibaba Cloud instance has been provisioned and is running. The application endpoint remains marked pending until the container is deployed and independently checked from outside the instance.
 
 | Evidence | Value |
 |---|---|
-| Alibaba Cloud service | `PENDING — ECS or Simple Application Server` |
-| Region | `PENDING` |
+| Alibaba Cloud service | Simple Application Server (Ubuntu 24.04, 2 vCPU, 2 GiB) |
+| Region | Singapore (`ap-southeast-1`) |
 | Public health endpoint | `PENDING` |
 | Deployed commit | `PENDING` |
 | Workbench proof screenshot | `PENDING` |
@@ -17,6 +17,7 @@ Deployment is being completed before the submission deadline. Replace the placeh
 ## Code evidence
 
 - [`deploy/alibaba-cloud/docker-compose.yml`](../deploy/alibaba-cloud/docker-compose.yml) — Alibaba-specific production runtime, region and provider metadata, persistent memory volume, and health check.
+- [`deploy/alibaba-cloud/bootstrap.sh`](../deploy/alibaba-cloud/bootstrap.sh) — idempotent Ubuntu bootstrap used by Alibaba Cloud Command Assistant or Workbench.
 - [`Dockerfile`](../Dockerfile) — reproducible multi-stage Node.js production image.
 - [`server/qwen.js`](../server/qwen.js) — direct Qwen Cloud / DashScope API integration for planning, grounded search, ASR, and image generation.
 - [`server/index.js`](../server/index.js) — public deployment metadata and health route plus the agent API and WebSocket-backed application server.
