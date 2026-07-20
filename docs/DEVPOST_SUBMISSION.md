@@ -32,7 +32,7 @@ https://github.com/teawa-b/QwenHackathon-2/blob/main/docs/ALIBABA_CLOUD_DEPLOYME
 https://github.com/teawa-b/QwenHackathon-2/blob/main/docs/ARCHITECTURE.md
 
 **Video**  
-`PENDING — public YouTube, Vimeo, or Youku URL; must be under 3:00`
+https://youtu.be/ZLBMvt5aA7g
 
 **Built with**  
 Qwen Cloud, qwen3.7-plus, qwen3-asr-flash, qwen-image-2.0-pro, DashScope, Alibaba Cloud, Node.js, Express, WebSockets, Three.js, WebXR, Vite, JavaScript, Docker
@@ -122,7 +122,7 @@ The strongest current captures are in the local `output/playwright/` folder:
 - [x] Alibaba Cloud deployment code committed to the repository
 - [x] Alibaba Cloud instance live and externally verified
 - [x] Workbench/instance proof screenshot added to the repo
-- [ ] Public video URL under three minutes
+- [x] Public video URL under three minutes
 - [ ] Devpost account signed in and hackathon registration completed
 - [ ] Devpost project fields and screenshots saved
 - [ ] Final review by Tiwa

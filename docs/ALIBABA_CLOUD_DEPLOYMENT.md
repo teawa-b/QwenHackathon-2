@@ -14,7 +14,13 @@ The Alibaba Cloud instance is deployed and was independently checked from London
 | Build journal | [https://supplyswarm.shroozy.com/journal/](https://supplyswarm.shroozy.com/journal/) |
 | Public health endpoint | [https://supplyswarm.shroozy.com/api/health](https://supplyswarm.shroozy.com/api/health) |
 | Deployed commit | [`a6184cc`](https://github.com/teawa-b/QwenHackathon-2/commit/a6184cc) |
+| Alibaba server overview | [`docs/images/alibaba-server-overview.png`](images/alibaba-server-overview.png) |
+| Domain-to-IP proof | [`docs/images/cloudflare-supplyswarm-dns.png`](images/cloudflare-supplyswarm-dns.png) |
 | Workbench proof screenshot | [`docs/images/alibaba-workbench-proof.png`](images/alibaba-workbench-proof.png) |
+
+![Alibaba Cloud Simple Application Server showing the running Singapore instance and public IP](images/alibaba-server-overview.png)
+
+![Cloudflare DNS showing supplyswarm.shroozy.com mapped to the Alibaba public IP](images/cloudflare-supplyswarm-dns.png)
 
 ![Alibaba Cloud Workbench showing the healthy SupplySwarm and Caddy containers](images/alibaba-workbench-proof.png)
 
