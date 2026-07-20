@@ -17,6 +17,8 @@ const esc = value => String(value ?? '')
 
 export function showConnect(app, prefillCode) {
   document.body.classList.add('connect-mode');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#0c1220');
+  document.title = 'Join a live swarm — SupplySwarm';
   let link = null;
   const state = {
     code: prefillCode || '',
@@ -26,26 +28,44 @@ export function showConnect(app, prefillCode) {
   };
 
   const header = right => `<header class="c-top">
-    <a class="c-brand" href="/"><span></span>SupplySwarm</a>
-    ${right ? `<div class="c-session">${right}</div>` : '<b class="c-ali">Qwen · Alibaba Cloud</b>'}
+    <a class="c-brand" href="/" aria-label="SupplySwarm home">
+      <span class="c-brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="c-brand-name">SupplySwarm <small>COMPANION</small></span>
+    </a>
+    ${right ? `<div class="c-session"><i></i>${right}</div>` : '<div class="c-ali"><i></i><span>Relay online</span><b>Qwen / Alibaba Cloud</b></div>'}
   </header>`;
 
   // ---------- Pairing screen ----------
   function renderEntry(error = '') {
     app.innerHTML = `${header('')}
-    <main class="c-shell">
-      <section class="c-pair">
-        <div class="c-orb" aria-hidden="true"><i></i><i></i><b>◈</b></div>
-        <h1>Join a live swarm</h1>
-        <p>Enter the 5-letter code shown in the 3D ops room, next to “Phone link”.</p>
-        <form id="pair-form">
-          <input id="pair-code" inputmode="latin" autocomplete="one-time-code" autocapitalize="characters"
-                 spellcheck="false" maxlength="5" placeholder="·····" value="${esc(state.code)}" aria-label="Connect code">
-          <button type="submit">Connect</button>
-        </form>
-        <p class="c-error" ${error ? '' : 'hidden'}>${esc(error)}</p>
-        <p class="c-hint">The code appears whenever someone opens the 3D Ops Room on this site.</p>
-        <p class="c-credit">Built by <a href="https://github.com/teawa-b" target="_blank" rel="noopener noreferrer">Tiwa Bakree · @teawa-b</a> · powered by Qwen, Alibaba Cloud</p>
+    <main class="c-shell c-entry-shell">
+      <section class="c-pair c-pair-entry">
+        <div class="c-pair-copy">
+          <p class="c-kicker"><span></span> Live companion link</p>
+          <h1>Step into<br>the <em>swarm.</em></h1>
+          <p class="c-intro">Follow every sourcing agent from your phone. Challenge decisions, steer the budget, and collect the final launch plan while the 3D room stays in motion.</p>
+          <ol class="c-pair-steps" aria-label="How to connect">
+            <li><b>01</b><span>Open the <strong>3D Ops Room</strong> on the main display</span></li>
+            <li><b>02</b><span>Find the code beside <strong>Phone link</strong></span></li>
+            <li><b>03</b><span>Enter it here to join the live session</span></li>
+          </ol>
+        </div>
+        <div class="c-pair-panel">
+          <div class="c-panel-top"><span>SESSION HANDSHAKE</span><b><i></i> READY</b></div>
+          <div class="c-orb" aria-hidden="true"><i></i><i></i><i></i><b><span></span><span></span><span></span></b></div>
+          <div class="c-panel-copy">
+            <p class="c-code-label">Enter your 5-character code</p>
+            <p>Codes are temporary and only visible inside the active ops room.</p>
+          </div>
+          <form id="pair-form">
+            <input id="pair-code" inputmode="latin" autocomplete="one-time-code" autocapitalize="characters"
+                   spellcheck="false" maxlength="5" placeholder="-----" value="${esc(state.code)}" aria-label="Connect code">
+            <button type="submit"><span>Join session</span><b aria-hidden="true">↗</b></button>
+          </form>
+          <p class="c-error" ${error ? '' : 'hidden'}>${esc(error)}</p>
+          <div class="c-private"><span aria-hidden="true">◇</span><p><b>View and steer only.</b> No supplier is contacted and no purchase can be made from this companion.</p></div>
+        </div>
+        <p class="c-credit">Built by <a href="https://github.com/teawa-b" target="_blank" rel="noopener noreferrer">Tiwa Bakree / @teawa-b</a><span>Powered by Qwen and Alibaba Cloud</span></p>
       </section>
     </main>`;
     const input = app.querySelector('#pair-code');
@@ -74,9 +94,11 @@ export function showConnect(app, prefillCode) {
 
   function renderConnecting() {
     app.innerHTML = `${header('')}
-    <main class="c-shell"><section class="c-pair">
-      <div class="c-orb wait" aria-hidden="true"><i></i><i></i><b>◈</b></div>
-      <h1>Connecting to ${esc(state.code)}…</h1>
+    <main class="c-shell"><section class="c-pair c-pair-wait">
+      <p class="c-kicker"><span></span> Establishing relay</p>
+      <div class="c-orb wait" aria-hidden="true"><i></i><i></i><i></i><b><span></span><span></span><span></span></b></div>
+      <h1>Connecting to <em>${esc(state.code)}</em></h1>
+      <p>Syncing the live brief, agent dialogue, and sourcing progress.</p>
     </section></main>`;
   }
 
