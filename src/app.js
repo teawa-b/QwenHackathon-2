@@ -196,6 +196,7 @@ function header() {
     <div class="topbar-right">
       ${aliBadge('in-topbar')}
       <div class="mode"><span></span> <b data-mode-label>${modeLabel()}</b></div>
+      <a class="journal-link" href="/journal">Build journal</a>
       <button class="menu" aria-label="About SupplySwarm" data-about>?</button>
     </div>
   </header>`;
@@ -1176,8 +1177,11 @@ async function runSwarm3D() {
   document.querySelector('#xr-results').addEventListener('click', () => { live.close(); room.dispose(); showResults(); });
 }
 
+const journalMatch = window.location.pathname.match(/^\/(?:journal|updates)\/?$/i);
 const connectMatch = window.location.pathname.match(/^\/connect(?:\/([A-Za-z0-9]{4,8}))?\/?$/i);
-if (connectMatch) {
+if (journalMatch) {
+  import('./journal.js').then(module => module.showJournal(app));
+} else if (connectMatch) {
   import('./connect.js').then(module => module.showConnect(app, (connectMatch[1] || '').toUpperCase()));
 } else {
   showBrief();

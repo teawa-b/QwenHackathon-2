@@ -603,8 +603,10 @@ body.connect-mode .c-toast{background:#e9edf6;color:#10182a}
 .ali-badge b{font-weight:700;color:var(--paper)}
 .ali-badge:hover{background:rgba(255,106,0,.1);color:var(--paper)}
 .topbar-right{display:flex;align-items:center;gap:10px}
+.journal-link{font:600 11px var(--body);color:var(--muted);text-decoration:none;border-bottom:1px solid rgba(52,84,228,.3);padding:4px 0;transition:.2s}
+.journal-link:hover{color:var(--lime);border-color:var(--lime)}
 .landing-badge{display:flex;justify-content:center;margin-top:18px}
-@media(max-width:760px){.ali-badge.in-topbar span{display:none}.ali-badge.in-topbar{padding:7px 10px}}
+@media(max-width:760px){.ali-badge.in-topbar span{display:none}.ali-badge.in-topbar{padding:7px 10px}.journal-link{display:none}}
 .c-ali{font:600 10px var(--body);letter-spacing:.09em;text-transform:uppercase;color:#8b95a8}
 .detail-block.memory ul li{color:#c4b5fd}
 
