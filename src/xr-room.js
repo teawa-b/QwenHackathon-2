@@ -117,24 +117,68 @@ function makeChoiceTitleSprite(headline, question, accent) {
 }
 
 // A single selectable choice panel (an option button, or the mode-picker card).
+// The panel keeps a `render(hovered)` closure on userData so the same card can
+// be repainted with a highlighted look the moment the pointer / controller ray
+// lands on it — the pick targets need to feel alive when you aim at them.
 function makeChoiceOptionSprite(label, sub, accent) {
   const canvas = document.createElement('canvas');
   canvas.width = 512; canvas.height = 236;
   const ctx = canvas.getContext('2d');
   const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
-  ctx.fillStyle = 'rgba(13,20,36,.95)';
-  ctx.beginPath(); ctx.roundRect(8, 8, 496, 220, 30); ctx.fill();
-  ctx.strokeStyle = accentCss; ctx.lineWidth = 6;
-  ctx.beginPath(); ctx.roundRect(8, 8, 496, 220, 30); ctx.stroke();
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#e8ecf4'; ctx.font = '700 48px sans-serif';
-  const lines = wrapLines(label, 15, 2);
-  const baseY = sub ? (lines.length === 1 ? 110 : 86) : (lines.length === 1 ? 132 : 108);
-  lines.forEach((line, i) => ctx.fillText(line, 256, baseY + i * 54));
-  if (sub) { ctx.fillStyle = accentCss; ctx.font = '600 28px sans-serif'; ctx.fillText(sub, 256, 196); }
+  const labelLines = wrapLines(label, 15, 2);
+  const baseY = sub ? (labelLines.length === 1 ? 110 : 86) : (labelLines.length === 1 ? 132 : 108);
+  const panel = makeCanvasPanel(canvas, 1.62, 0.75);
+  panel.userData.render = hovered => {
+    ctx.clearRect(0, 0, 512, 236);
+    // Hover lifts the card: warmer fill, an accent wash and a thicker, brighter
+    // border so the option the user is aiming at clearly stands out.
+    ctx.fillStyle = hovered ? 'rgba(22,36,64,.98)' : 'rgba(13,20,36,.95)';
+    ctx.beginPath(); ctx.roundRect(8, 8, 496, 220, 30); ctx.fill();
+    if (hovered) {
+      ctx.save();
+      ctx.globalAlpha = 0.18; ctx.fillStyle = accentCss;
+      ctx.beginPath(); ctx.roundRect(8, 8, 496, 220, 30); ctx.fill();
+      ctx.restore();
+    }
+    ctx.strokeStyle = accentCss; ctx.lineWidth = hovered ? 12 : 6;
+    ctx.beginPath(); ctx.roundRect(8, 8, 496, 220, 30); ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#e8ecf4'; ctx.font = '700 48px sans-serif';
+    labelLines.forEach((line, i) => ctx.fillText(line, 256, baseY + i * 54));
+    if (sub) { ctx.fillStyle = accentCss; ctx.font = '600 28px sans-serif'; ctx.fillText(sub, 256, 196); }
+    panel.material.map.needsUpdate = true;
+  };
+  panel.userData.render(false);
   // Slightly larger than the old sprite so the controller target is forgiving
   // without making the visual feel oversized in the room.
-  return makeCanvasPanel(canvas, 1.62, 0.75);
+  return panel;
+}
+
+// A compact "typing indicator" pill — three pulsing dots — that hovers over a
+// specialist while it is spun up but has nothing to say yet, so the swarm never
+// looks frozen during the wait before the timeline opens.
+function makeThinkingSprite(accent) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 104;
+  const ctx = canvas.getContext('2d');
+  const accentCss = `#${accent.toString(16).padStart(6, '0')}`;
+  const panel = makeCanvasPanel(canvas, 0.84, 0.34);
+  panel.userData.renderDots = lit => {
+    ctx.clearRect(0, 0, 256, 104);
+    ctx.fillStyle = 'rgba(13,20,36,.9)';
+    ctx.beginPath(); ctx.roundRect(8, 22, 240, 60, 30); ctx.fill();
+    ctx.strokeStyle = accentCss; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(8, 22, 240, 60, 30); ctx.stroke();
+    ctx.fillStyle = accentCss;
+    for (let d = 0; d < 3; d++) {
+      ctx.globalAlpha = d === lit ? 1 : 0.28;
+      ctx.beginPath(); ctx.arc(88 + d * 40, 52, 12, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    panel.material.map.needsUpdate = true;
+  };
+  panel.userData.renderDots(0);
+  return panel;
 }
 
 function buildBot(accent, scale = 1) {
@@ -358,6 +402,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     for (const panel of choicePanels) disposeSprite(panel.sprite);
     choicePanels = [];
     if (choiceTitleSprite) { disposeSprite(choiceTitleSprite); choiceTitleSprite = null; }
+    if (!renderer.xr.isPresenting) renderer.domElement.style.cursor = '';
   }
 
   // Resolve the open choice (a pick, or a dismissal with the default value).
@@ -378,19 +423,44 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     choiceModal = modal;
     choiceDefault = defaultValue;
     choiceTitleSprite = registerUi(makeChoiceTitleSprite(headline, question, LIME));
-    choiceTitleSprite.position.set(0, 2.85, 2.7);
+    choiceTitleSprite.position.set(0, 2.9, 2.6);
     world.add(choiceTitleSprite);
     const n = options.length;
-    const spacing = Math.min(1.62, 6.4 / Math.max(1, n));
+    // Shrink the cards as the options pile up so a four-, five- or six-way
+    // question still fits in one readable arc instead of the panels clipping
+    // into one another (the old flat row overlapped once there were four+).
+    const scale = Math.max(0.62, Math.min(1, 1 - (n - 3) * 0.14));
+    const radius = 3.15;
+    const cardW = 1.62 * scale;
+    // Lay the cards on a shallow arc curving toward the viewer, with an angular
+    // gap wide enough that neighbouring cards never overlap on screen.
+    const step = 2 * Math.asin(Math.min(0.42, (cardW + 0.26) / (2 * radius)));
     options.forEach((option, i) => {
       const accent = option.skip ? 0x8d97ad : ACCENTS[i % ACCENTS.length];
       const sprite = registerUi(makeChoiceOptionSprite(option.label, option.sub, accent));
-      const x = (i - (n - 1) / 2) * spacing;
-      sprite.position.set(x, 1.78, 2.75);
+      sprite.scale.setScalar(scale);
+      const a = (i - (n - 1) / 2) * step;
+      sprite.position.set(Math.sin(a) * radius, 1.78, Math.cos(a) * radius);
       world.add(sprite);
-      choicePanels.push({ sprite, value: option.value, onPick: () => { sfx.play('event', 0.4); settleChoice(option.value); } });
+      const panel = {
+        sprite, value: option.value, baseScale: scale, hovered: false,
+        onPick: () => { sfx.play('event', 0.4); settleChoice(option.value); },
+        setHover: h => {
+          if (panel.hovered === h) return;
+          panel.hovered = h;
+          sprite.userData.render?.(h);
+          if (h) sfx.play('event', 0.16); // soft tick as the aim lands on a card
+        }
+      };
+      choicePanels.push(panel);
     });
     return new Promise(resolve => { choiceResolve = resolve; });
+  }
+
+  // Clear any hover highlight (e.g. when the choice closes or the pointer leaves).
+  function clearChoiceHover() {
+    for (const panel of choicePanels) panel.setHover?.(false);
+    if (!renderer.xr.isPresenting) renderer.domElement.style.cursor = '';
   }
 
   // Try to resolve a click/select against the open choice panels. Returns true
@@ -587,7 +657,23 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     sfx.play('release', 0.5);
     callbacks.onHoldEnd?.();
   }
+  // Desktop hover feedback: highlight whichever choice card the cursor is over.
+  function onPointerMove(e) {
+    if (!choicePanels.length || renderer.xr.isPresenting) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointerVec.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    raycaster.setFromCamera(pointerVec, camera);
+    let over = false;
+    for (const panel of choicePanels) {
+      const hit = raycaster.intersectObject(panel.sprite).length > 0;
+      panel.setHover(hit);
+      over = over || hit;
+    }
+    renderer.domElement.style.cursor = over ? 'pointer' : '';
+  }
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  renderer.domElement.addEventListener('pointermove', onPointerMove);
+  renderer.domElement.addEventListener('pointerleave', clearChoiceHover);
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('pointercancel', onPointerUp);
 
@@ -807,6 +893,9 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   // one conversation to follow, plus at most one background thought.
   const MAX_BUBBLES = 2;
   const AMBIENT_THOUGHT_GAP = 6.5;
+  // While the team is beamed in but the timeline hasn't opened yet, cycle the
+  // thoughts faster so there's almost always text over a head during the wait.
+  const PRERUN_THOUGHT_GAP = 3.4;
 
   // The coordinator counts as a conversation participant too.
   const coordEntity = {
@@ -866,6 +955,12 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       );
       beam.position.copy(bot.position).setY(2);
       world.add(beam);
+      // A "thinking…" dots pill that surfaces while the robot is spun up but
+      // idle (no bubble yet), so it never looks frozen during the pre-run wait.
+      const think = registerUi(makeThinkingSprite(accent));
+      think.material.opacity = 0;
+      think.visible = false;
+      world.add(think);
       const focus = String(agent[2] || 'my category');
       const thoughts = Array.isArray(agent[3]) && agent[3].length ? agent[3] : [
         `Scanning Alibaba for ${focus.toLowerCase()}…`,
@@ -878,7 +973,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         .map(line => `Remembering: ${String(line).slice(0, 82)}`);
       thoughts.unshift(...memory.slice(0, 2));
       return {
-        bot, label, link, pulse, beam, accent,
+        bot, label, link, pulse, beam, think, accent,
         code: String(agent[0] || ''), name: String(agent[1] || ''), focus,
         thoughts, thoughtIndex: 0, itemLines: [],
         home, basePos: home.clone(),
@@ -913,7 +1008,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   function disposeSpecialists() {
     for (const s of specialists) {
       for (let b = bubbles.length - 1; b >= 0; b--) if (bubbles[b].entity === s) removeBubble(b);
-      for (const obj of [s.bot, s.label, s.link, s.pulse, s.beam]) {
+      for (const obj of [s.bot, s.label, s.link, s.pulse, s.beam, s.think]) {
         uiPanels.delete(obj);
         obj.removeFromParent();
         obj.geometry?.dispose?.();
@@ -1171,6 +1266,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         s.label.material.opacity = shrink;
         s.label.position.set(s.basePos.x, 1.95 + (1 - shrink) * 2.4, s.basePos.z);
         s.pulse.material.opacity = 0;
+        s.think.visible = false; s.think.material.opacity = 0;
         if (shrink <= 0 && s.beam.material.opacity <= 0) {
           s.active = false;
           s.bot.visible = false;
@@ -1214,13 +1310,30 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       tmp.copy(hubAnchor).lerp(s.bot.position.clone().setY(0.95), t);
       s.pulse.position.copy(tmp);
       s.pulse.material.opacity = finished ? 0 : Math.sin(t * Math.PI) * 0.9;
+
+      // "Thinking…" pill: a live typing indicator over an idle robot during the
+      // pre-timeline wait, so a freshly beamed-in agent never just floats there
+      // silently. Hidden the moment it has a real thought/speech bubble.
+      const idleThinking = timelineStart < 0 && teamRevealed && !finished &&
+        !bubbles.some(bubble => bubble.entity === s);
+      const pill = s.think;
+      const targetOpacity = idleThinking ? 0.92 : 0;
+      pill.material.opacity += (targetOpacity - pill.material.opacity) * Math.min(1, dt * 8);
+      pill.visible = pill.material.opacity > 0.02;
+      if (pill.visible) {
+        pill.position.set(s.basePos.x, 2.4 + bob, s.basePos.z);
+        const lit = Math.floor(elapsed / 0.3) % 3;
+        if (pill.userData.lit !== lit) { pill.userData.lit = lit; pill.userData.renderDots(lit); }
+      }
     }
 
-    // Between spoken events, ONE agent at a time surfaces its genuine
-    // reasoning as a thought bubble (Qwen-authored in live mode) — a single
-    // rotating slot rather than every robot thinking at once.
-    if (timelineStart >= 0 && !finished && elapsed >= nextAmbientThoughtAt) {
-      nextAmbientThoughtAt = elapsed + AMBIENT_THOUGHT_GAP;
+    // Between spoken events — and during the pre-run wait once the team is in —
+    // ONE agent at a time surfaces its genuine reasoning as a thought bubble
+    // (Qwen-authored in live mode): a single rotating slot rather than every
+    // robot thinking at once.
+    const thinkingPhase = timelineStart >= 0 || teamRevealed;
+    if (thinkingPhase && !finished && elapsed >= nextAmbientThoughtAt) {
+      nextAmbientThoughtAt = elapsed + (timelineStart >= 0 ? AMBIENT_THOUGHT_GAP : PRERUN_THOUGHT_GAP);
       const thinkers = [...specialists.filter(s => s.active && s.departAt < 0), coordEntity];
       if (bubbles.length < MAX_BUBBLES && !bubbles.some(bubble => bubble.kind === 'thought')) {
         const thinker = thinkers[ambientThoughtIndex++ % thinkers.length];
@@ -1254,6 +1367,27 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     }
     for (const panel of uiPanels) {
       if (panel.visible && panel.parent) panel.lookAt(uiAudienceWorld);
+    }
+
+    // Choice cards: in VR, hover whichever card a controller ray is aimed at
+    // (desktop uses pointermove); then ease every card toward its hover scale so
+    // the aimed option gently pops forward as clear pick feedback.
+    if (choicePanels.length) {
+      if (renderer.xr.isPresenting) {
+        const hovered = new Set();
+        for (const controller of controllers) {
+          setControllerRay(controller);
+          for (const panel of choicePanels) {
+            if (raycaster.intersectObject(panel.sprite).length) { hovered.add(panel); break; }
+          }
+        }
+        for (const panel of choicePanels) panel.setHover(hovered.has(panel));
+      }
+      for (const panel of choicePanels) {
+        const target = panel.baseScale * (panel.hovered ? 1.08 : 1);
+        const cur = panel.sprite.scale.x;
+        panel.sprite.scale.setScalar(cur + (target - cur) * Math.min(1, dt * 12));
+      }
     }
 
     // Agent-to-agent message pulses travel between the two talking robots.
@@ -1371,6 +1505,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       // Stagger the entrances so they arrive one after another, not in a clump.
       specialists.forEach((s, i) => { s.revealAt = now + 0.6 + i * 0.85; });
       revealQueue = specialists.map(s => s).sort((a, b) => a.revealAt - b.revealAt);
+      // Keep the swarm visibly thinking during the pre-timeline wait: start the
+      // rotating thought bubbles once the last robot has finished beaming in.
+      const lastRevealAt = revealQueue.length ? revealQueue[revealQueue.length - 1].revealAt : now;
+      nextAmbientThoughtAt = lastRevealAt + 2.2;
       statusText = '';
       drawBoard();
     },
@@ -1434,6 +1572,8 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointerleave', clearChoiceHover);
       for (const controller of controllers) {
         controller.removeEventListener('selectstart', onSelectStart);
         controller.removeEventListener('selectend', onSelectEnd);
