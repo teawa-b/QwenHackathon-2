@@ -1,0 +1,15 @@
+.git
+.github
+.playwright-cli
+.claude
+.codex
+.agents
+node_modules
+dist
+.site-client
+output
+server/data
+.env
+.env.*
+!.env.example
+*.log

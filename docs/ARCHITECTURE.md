@@ -16,7 +16,7 @@ flowchart TB
         CC[Connect-code dashboard<br/>agent bubbles · inspect · requests · PDF report]
     end
 
-    subgraph Server [Express — server/]
+    subgraph Server [Alibaba Cloud ECS/SAS — Dockerised Express backend]
         API[/api/plan · /api/transcribe · /api/image · /api/memory/]
         WS[live.js — WebSocket session hub<br/>connect codes · snapshots · request relay]
         PL[planner.js — agent society orchestrator]

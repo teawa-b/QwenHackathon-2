@@ -1,0 +1,29 @@
+services:
+  supplyswarm:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: supplyswarm:alibaba-cloud
+    container_name: supplyswarm
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 8787
+      NODE_ENV: production
+      DEPLOYMENT_PROVIDER: Alibaba Cloud ECS/SAS
+      DEPLOYMENT_REGION: ${ALIBABA_CLOUD_REGION:-ap-southeast-1}
+      DEPLOYMENT_COMMIT: ${DEPLOYMENT_COMMIT:-main}
+    ports:
+      - "80:8787"
+    volumes:
+      - swarm-memory:/app/server/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  swarm-memory:

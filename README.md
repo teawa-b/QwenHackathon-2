@@ -1,6 +1,7 @@
 # SupplySwarm
 
 > **Architecture docs:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — pipeline diagrams, Qwen API usage, validation/honesty layer, module map.
+> **Alibaba Cloud proof:** [docs/ALIBABA_CLOUD_DEPLOYMENT.md](docs/ALIBABA_CLOUD_DEPLOYMENT.md) — deployment code, public verification endpoint, and Workbench evidence.
 
 SupplySwarm is a mobile-first hackathon vertical slice that turns a business brief and budget into a transparent procurement package sourced from live Alibaba.com search. Built for **Track 3: Agent Society**, it demonstrates each judging criterion directly:
 
@@ -42,7 +43,13 @@ npm.cmd run dev:server   # API + static on :8787
 npm.cmd run dev          # optional: Vite dev server on :5173, proxies /api to :8787
 ```
 
-## Deploy (Railway)
+## Deploy (Alibaba Cloud)
+
+The hackathon production bundle targets **Alibaba Cloud ECS or Simple Application Server**. It includes a multi-stage [`Dockerfile`](Dockerfile), an Alibaba-specific [`docker-compose.yml`](deploy/alibaba-cloud/docker-compose.yml), persistent swarm-memory storage, a container health check, and non-secret provider/region/commit evidence in `/api/health`.
+
+See [`deploy/alibaba-cloud/README.md`](deploy/alibaba-cloud/README.md) for the exact Workbench deployment and proof-capture steps.
+
+## Existing HTTPS demo (Railway)
 
 Railway auto-detects Node: build command `npm run build`, start command `npm start`. The Express server serves both the API and the built frontend on `PORT`. Set `DASHSCOPE_API_KEY` in service variables.
 

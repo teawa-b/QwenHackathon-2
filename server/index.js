@@ -18,7 +18,12 @@ const asyncRoute = handler => (req, res) => {
 };
 
 app.get('/api/health', (req, res) => {
-  res.json({ live: liveMode(), models: liveMode() ? MODELS : null });
+  const deployment = process.env.DEPLOYMENT_PROVIDER ? {
+    provider: process.env.DEPLOYMENT_PROVIDER,
+    region: process.env.DEPLOYMENT_REGION || 'not-set',
+    commit: process.env.DEPLOYMENT_COMMIT || 'not-set'
+  } : null;
+  res.json({ live: liveMode(), models: liveMode() ? MODELS : null, deployment });
 });
 
 // What the swarm remembers across missions — powers the landing "swarm
