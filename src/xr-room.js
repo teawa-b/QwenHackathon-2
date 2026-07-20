@@ -1026,20 +1026,6 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     sfx.play('spawn', 0.5);
   }
 
-  function findSpecialist(agent) {
-    const code = String(agent[0] || '').toLowerCase();
-    const name = String(agent[1] || '').toLowerCase();
-    return specialists.find(s => s.code.toLowerCase() === code || s.name.toLowerCase() === name);
-  }
-
-  // Does the already-revealed roster match the final plan's agents? (Same run =
-  // same order and codes, so we can reuse the beamed-in robots.)
-  function sameRoster(agents) {
-    if (!teamRevealed || !Array.isArray(agents) || specialists.length !== agents.length) return false;
-    return agents.every((agent, i) =>
-      String(agent[0]) === specialists[i].code && String(agent[1]) === specialists[i].name);
-  }
-
   function disposeSpecialists() {
     for (const s of specialists) {
       for (let b = bubbles.length - 1; b >= 0; b--) if (bubbles[b].entity === s) removeBubble(b);
@@ -1055,12 +1041,37 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     revealQueue = [];
   }
 
-  // Once the real searches return, refresh the reused robots with each agent's
-  // genuine Qwen reasoning steps and recalled memory for their thought bubbles.
-  function refreshSpecialists(agents) {
-    for (const agent of agents) {
-      const s = findSpecialist(agent);
-      if (!s) continue;
+  // Reuse the already-beamed-in robots for the final plan instead of disposing
+  // and re-spawning the whole team (which flashed everyone off-screen for a
+  // beat, then trickled them back in). Each robot keeps its mesh and ring slot;
+  // only its label/identity and genuine reasoning are swapped in place, so the
+  // team never disappears between planning and the timeline.
+  function reuseSpecialists(agents) {
+    agents.forEach((agent, i) => {
+      const s = specialists[i];
+      if (!s) return;
+      const code = String(agent[0] || '');
+      const name = String(agent[1] || '');
+      if (s.code !== code || s.name !== name) {
+        // Identity changed (e.g. the live roster gave way to the demo
+        // fallback): swap the label texture on the same robot rather than
+        // beaming it out and back in.
+        const accent = ACCENTS[i % ACCENTS.length];
+        const pos = s.label.position.clone();
+        const wasVisible = s.label.visible;
+        const opacity = s.label.material.opacity;
+        uiPanels.delete(s.label);
+        s.label.removeFromParent();
+        s.label.geometry?.dispose?.();
+        s.label.material.map?.dispose(); s.label.material.dispose();
+        s.label = registerUi(makeLabelSprite(code, name, accent));
+        s.label.position.copy(pos);
+        s.label.visible = wasVisible;
+        s.label.material.opacity = opacity;
+        world.add(s.label);
+        s.code = code; s.name = name;
+      }
+      s.focus = String(agent[2] || s.focus);
       const genuine = (Array.isArray(agent[3]) ? agent[3] : []).map(String).filter(Boolean).slice(0, 3);
       const memory = (Array.isArray(agent[4]) ? agent[4] : [])
         .map(line => `Remembering: ${String(line).slice(0, 82)}`).slice(0, 2);
@@ -1068,7 +1079,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         s.thoughts = [...memory, ...(genuine.length ? genuine : s.thoughts)];
         s.thoughtIndex = 0;
       }
-    }
+    });
   }
 
   function removeBubble(index) {
@@ -1330,9 +1341,14 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       const bob = Math.sin(elapsed * 1.8 + s.offset * 6) * 0.045;
       s.bot.position.set(s.basePos.x, bob, s.basePos.z);
 
-      // Face the agent being spoken to, otherwise the coordinator.
+      // Face the agent being spoken to, otherwise the coordinator. Guard against
+      // a target sitting almost on top of the robot horizontally: there the look
+      // direction collapses toward vertical and lookAt yaws/flips wildly, which
+      // reads as the robot "bending" in place. Below the threshold, hold the
+      // current facing instead of re-aiming at a degenerate direction.
       const facing = s.faceTarget && elapsed < s.returnAt + 0.8 ? s.faceTarget : hubAnchor;
-      s.bot.lookAt(facing.x, s.bot.position.y, facing.z);
+      const fdx = facing.x - s.bot.position.x, fdz = facing.z - s.bot.position.z;
+      if (fdx * fdx + fdz * fdz > 0.05) s.bot.lookAt(facing.x, s.bot.position.y, facing.z);
 
       // Label and hub link follow the walking bot.
       s.label.position.set(s.basePos.x, 1.95 + bob, s.basePos.z);
@@ -1554,10 +1570,11 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     begin(scenario, timeline, newBrief, runSummary) {
       if (timelineStart >= 0) return;
       if (choicePanels.length) settleChoice(choiceDefault); // clear any open prompt
-      if (sameRoster(scenario.agents)) {
-        // The team already beamed in during planning — reuse those robots and
-        // top them up with the genuine reasoning the searches produced.
-        refreshSpecialists(scenario.agents);
+      if (teamRevealed && Array.isArray(scenario.agents) && specialists.length === scenario.agents.length) {
+        // The team already beamed in during planning — reuse those exact robots
+        // (relabelling any whose identity changed) and top them up with the
+        // genuine reasoning the searches produced, so nothing blinks out.
+        reuseSpecialists(scenario.agents);
       } else {
         if (teamRevealed) disposeSpecialists();
         specialists = buildSpecialists(scenario.agents);
