@@ -782,19 +782,54 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     sfx.play('release', 0.5);
     callbacks.onHoldEnd?.();
   };
+  const RAY_MAX = 6;
   const controllers = [0, 1].map(index => {
     const controller = renderer.xr.getController(index);
     const ray = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
       new THREE.LineBasicMaterial({ color: MINT, transparent: true, opacity: 0.5 })
     );
-    ray.scale.z = 6;
+    ray.scale.z = RAY_MAX;
     controller.add(ray);
+    // A small dot that sits where the ray lands, so a hit reads as a hit.
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.02, 12, 10),
+      new THREE.MeshBasicMaterial({ color: MINT, transparent: true, opacity: 0.9, depthTest: false })
+    );
+    dot.position.z = -RAY_MAX;
+    dot.visible = false;
+    controller.add(dot);
+    controller.userData.ray = ray;
+    controller.userData.dot = dot;
     controller.addEventListener('selectstart', onSelectStart);
     controller.addEventListener('selectend', onSelectEnd);
     rig.add(controller);
     return controller;
   });
+
+  // Objects a controller ray should visibly stop at rather than pass through.
+  function rayTargets() {
+    const targets = [coordinator];
+    for (const s of specialists) if (s.active) targets.push(s.bot);
+    for (const panel of choicePanels) targets.push(panel.sprite);
+    if (viewButton?.visible) targets.push(viewButton);
+    if (speedButton.visible) targets.push(speedButton);
+    return targets;
+  }
+
+  // Trim each controller's laser to the nearest thing it hits (and park a dot
+  // there), so the ray lands on panels and robots instead of shooting through.
+  function updateControllerRays() {
+    for (const controller of controllers) {
+      setControllerRay(controller);
+      const hit = raycaster.intersectObjects(rayTargets(), true)[0];
+      const dist = hit ? Math.min(hit.distance, RAY_MAX) : RAY_MAX;
+      controller.userData.ray.scale.z = dist;
+      const dot = controller.userData.dot;
+      dot.visible = !!hit;
+      dot.position.z = -dist;
+    }
+  }
   function onSessionEnd() {
     for (const controller of controllers) {
       if (controller.userData.holdingCoordinator) {
@@ -1389,6 +1424,9 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
         panel.sprite.scale.setScalar(cur + (target - cur) * Math.min(1, dt * 12));
       }
     }
+
+    // Keep each hand's laser trimmed to whatever it's pointing at.
+    if (renderer.xr.isPresenting) updateControllerRays();
 
     // Agent-to-agent message pulses travel between the two talking robots.
     for (let k = talks.length - 1; k >= 0; k--) {
