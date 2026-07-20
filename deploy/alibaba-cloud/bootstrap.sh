@@ -51,7 +51,7 @@ else
 fi
 
 for attempt in {1..30}; do
-  if curl -fsS http://127.0.0.1/api/health; then
+  if docker exec supplyswarm wget -qO- http://127.0.0.1:8787/api/health; then
     printf '\nSupplySwarm is healthy on Alibaba Cloud.\n'
     exit 0
   fi

@@ -14,8 +14,8 @@ services:
       DEPLOYMENT_PROVIDER: Alibaba Cloud ECS/SAS
       DEPLOYMENT_REGION: ${ALIBABA_CLOUD_REGION:-ap-southeast-1}
       DEPLOYMENT_COMMIT: ${DEPLOYMENT_COMMIT:-main}
-    ports:
-      - "80:8787"
+    expose:
+      - "8787"
     volumes:
       - swarm-memory:/app/server/data
     healthcheck:
@@ -25,5 +25,23 @@ services:
       start_period: 20s
       retries: 3
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: supplyswarm-caddy
+    restart: unless-stopped
+    depends_on:
+      supplyswarm:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   swarm-memory:
+  caddy-data:
+  caddy-config:

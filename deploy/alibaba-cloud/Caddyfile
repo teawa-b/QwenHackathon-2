@@ -1,0 +1,4 @@
+supplyswarm.shroozy.com {
+  encode zstd gzip
+  reverse_proxy supplyswarm:8787
+}
