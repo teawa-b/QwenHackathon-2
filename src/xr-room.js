@@ -7,6 +7,27 @@ const INK = 0x0d1424, LIME = 0xe8a33d, MINT = 0x5c7cff, ORANGE = 0xff7a5c;
 const SHELL = 0x93a0b5, FACE = 0xe8ecf4, TRIM = 0x39445c;
 const ACCENTS = [MINT, 0x46c8b4, LIME, MINT, ORANGE, 0x46c8b4, LIME];
 
+// Canvas UI is rendered on real planes instead of THREE.Sprite. Sprite
+// raycasting needs raycaster.camera, which is not populated when a WebXR
+// controller supplies the ray directly. Plane meshes work with controller rays
+// and, unlike sprites, do not swivel with every movement of the user's head.
+function makeCanvasPanel(canvas, width, height) {
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false
+    })
+  );
+  panel.userData.worldUi = true;
+  return panel;
+}
+
 function makeLabelSprite(code, name, accent) {
   const canvas = document.createElement('canvas');
   canvas.width = 512; canvas.height = 160;
@@ -20,11 +41,7 @@ function makeLabelSprite(code, name, accent) {
   ctx.fillText(code, 256, 74);
   ctx.fillStyle = '#e8ecf4'; ctx.font = '600 34px sans-serif';
   ctx.fillText(name.toUpperCase(), 256, 126);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
-  sprite.scale.set(1.05, 0.33, 1);
-  return sprite;
+  return makeCanvasPanel(canvas, 1.05, 0.33);
 }
 
 function makeBubbleSprite(text, accent, kind = 'speech') {
@@ -64,11 +81,7 @@ function makeBubbleSprite(text, accent, kind = 'speech') {
   const boxHeight = thought ? 186 : 216;
   const startY = (boxHeight + 16) / 2 - (lines.length - 1) * 26 + 12;
   lines.forEach((line, i) => ctx.fillText(line, 384, startY + i * 50));
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
-  sprite.scale.set(thought ? 1.65 : 1.9, thought ? 0.5 : 0.57, 1);
-  return sprite;
+  return makeCanvasPanel(canvas, thought ? 1.65 : 1.9, thought ? 0.5 : 0.57);
 }
 
 // Wrap a string to at most `max` lines of ~`width` chars, ellipsising overflow.
@@ -100,11 +113,7 @@ function makeChoiceTitleSprite(headline, question, accent) {
   ctx.fillStyle = '#e8ecf4'; ctx.font = '700 56px sans-serif';
   const lines = wrapLines(question, 34, 2);
   lines.forEach((line, i) => ctx.fillText(line, 512, 140 + i * 66));
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
-  sprite.scale.set(3.2, 0.94, 1);
-  return sprite;
+  return makeCanvasPanel(canvas, 3.2, 0.94);
 }
 
 // A single selectable choice panel (an option button, or the mode-picker card).
@@ -123,11 +132,9 @@ function makeChoiceOptionSprite(label, sub, accent) {
   const baseY = sub ? (lines.length === 1 ? 110 : 86) : (lines.length === 1 ? 132 : 108);
   lines.forEach((line, i) => ctx.fillText(line, 256, baseY + i * 54));
   if (sub) { ctx.fillStyle = accentCss; ctx.font = '600 28px sans-serif'; ctx.fillText(sub, 256, 196); }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
-  sprite.scale.set(1.5, 0.69, 1);
-  return sprite;
+  // Slightly larger than the old sprite so the controller target is forgiving
+  // without making the visual feel oversized in the room.
+  return makeCanvasPanel(canvas, 1.62, 0.75);
 }
 
 function buildBot(accent, scale = 1) {
@@ -195,6 +202,14 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   const world = new THREE.Group();
   scene.add(world);
 
+  // Desktop panels continue to face the orbit camera. In immersive VR/AR they
+  // face one stable point at the front of the room, so looking around no longer
+  // makes every piece of UI rotate with the headset.
+  const uiPanels = new Set();
+  const uiAudienceLocal = new THREE.Vector3(0, 2.35, 5.8);
+  const uiAudienceWorld = new THREE.Vector3();
+  const registerUi = panel => { uiPanels.add(panel); return panel; };
+
   const rig = new THREE.Group();
   const camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 60);
   camera.position.set(0, 3.1, 7.6);
@@ -240,7 +255,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   // Coordinator — the robot you hold and talk to
   const coordinator = buildBot(LIME, 1.15);
   world.add(coordinator);
-  const hubLabel = makeLabelSprite('HUB', 'Coordinator', LIME);
+  const hubLabel = registerUi(makeLabelSprite('HUB', 'Coordinator', LIME));
   hubLabel.position.set(0, 2.45, 0); world.add(hubLabel);
   const hubAnchor = new THREE.Vector3(0, 1.15, 0);
 
@@ -262,8 +277,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   const codeCtx = codeCanvas.getContext('2d');
   const codeTexture = new THREE.CanvasTexture(codeCanvas);
   codeTexture.colorSpace = THREE.SRGBColorSpace;
-  const codeSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: codeTexture, transparent: true, depthWrite: false }));
-  codeSprite.scale.set(1.35, 0.47, 1);
+  const codeSprite = registerUi(new THREE.Mesh(
+    new THREE.PlaneGeometry(1.35, 0.47),
+    new THREE.MeshBasicMaterial({ map: codeTexture, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })
+  ));
   // Upper-left corner, above the board — well clear of the coordinator's speech
   // bubbles that used to overlay it when it floated dead centre.
   const CODE_BASE_Y = 4.35;
@@ -285,8 +302,10 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   const speedCtx = speedCanvas.getContext('2d');
   const speedTexture = new THREE.CanvasTexture(speedCanvas);
   speedTexture.colorSpace = THREE.SRGBColorSpace;
-  const speedButton = new THREE.Sprite(new THREE.SpriteMaterial({ map: speedTexture, transparent: true, depthWrite: false }));
-  speedButton.scale.set(1.15, 0.45, 1);
+  const speedButton = registerUi(new THREE.Mesh(
+    new THREE.PlaneGeometry(1.15, 0.45),
+    new THREE.MeshBasicMaterial({ map: speedTexture, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })
+  ));
   // Lower-RIGHT front: clear of the left-hand board and (on desktop/mobile) the
   // bottom-left HUD feed, while staying easy to point a controller at in VR.
   speedButton.position.set(2.6, 0.9, 2.0);
@@ -328,7 +347,9 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
   let choiceDefault = null;
 
   function disposeSprite(sprite) {
+    uiPanels.delete(sprite);
     sprite.removeFromParent();
+    sprite.geometry?.dispose?.();
     sprite.material.map?.dispose();
     sprite.material.dispose();
   }
@@ -356,14 +377,14 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     clearChoice();
     choiceModal = modal;
     choiceDefault = defaultValue;
-    choiceTitleSprite = makeChoiceTitleSprite(headline, question, LIME);
+    choiceTitleSprite = registerUi(makeChoiceTitleSprite(headline, question, LIME));
     choiceTitleSprite.position.set(0, 2.85, 2.7);
     world.add(choiceTitleSprite);
     const n = options.length;
     const spacing = Math.min(1.62, 6.4 / Math.max(1, n));
     options.forEach((option, i) => {
       const accent = option.skip ? 0x8d97ad : ACCENTS[i % ACCENTS.length];
-      const sprite = makeChoiceOptionSprite(option.label, option.sub, accent);
+      const sprite = registerUi(makeChoiceOptionSprite(option.label, option.sub, accent));
       const x = (i - (n - 1) / 2) * spacing;
       sprite.position.set(x, 1.78, 2.75);
       world.add(sprite);
@@ -828,7 +849,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       bot.lookAt(0, 0, 0);
       bot.visible = false;
       world.add(bot);
-      const label = makeLabelSprite(agent[0], agent[1], accent);
+      const label = registerUi(makeLabelSprite(agent[0], agent[1], accent));
       label.position.copy(bot.position).setY(1.95);
       label.visible = false;
       world.add(label);
@@ -893,6 +914,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     for (const s of specialists) {
       for (let b = bubbles.length - 1; b >= 0; b--) if (bubbles[b].entity === s) removeBubble(b);
       for (const obj of [s.bot, s.label, s.link, s.pulse, s.beam]) {
+        uiPanels.delete(obj);
         obj.removeFromParent();
         obj.geometry?.dispose?.();
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -921,7 +943,9 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
 
   function removeBubble(index) {
     const bubble = bubbles[index];
+    uiPanels.delete(bubble.sprite);
     bubble.sprite.removeFromParent();
+    bubble.sprite.geometry?.dispose?.();
     bubble.sprite.material.map.dispose();
     bubble.sprite.material.dispose();
     bubbles.splice(index, 1);
@@ -946,7 +970,7 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       const oldestThought = bubbles.findIndex(bubble => bubble.kind === 'thought');
       removeBubble(oldestThought >= 0 ? oldestThought : 0);
     }
-    const sprite = makeBubbleSprite(text, accent ?? entity.accent, kind);
+    const sprite = registerUi(makeBubbleSprite(text, accent ?? entity.accent, kind));
     world.add(sprite);
     bubbles.push({ sprite, entity, start: elapsed, until: elapsed + duration, kind });
   }
@@ -1069,8 +1093,9 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       texture.colorSpace = THREE.SRGBColorSpace;
       viewButton = new THREE.Mesh(
         new THREE.PlaneGeometry(1.7, 0.425),
-        new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide })
+        new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })
       );
+      registerUi(viewButton);
       viewButton.position.set(0, 1.02, 1.75);
       world.add(viewButton);
     }
@@ -1119,8 +1144,6 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
     if (viewButtonAt >= 0 && elapsed >= viewButtonAt) { viewButtonAt = -1; spawnViewButton(); }
     if (viewButton?.visible) {
       viewButton.position.y = 1.02 + Math.sin(elapsed * 2.1) * 0.045;
-      camera.getWorldPosition(tmp);
-      viewButton.lookAt(tmp.x, viewButton.position.y, tmp.z);
     }
 
     coordinator.position.y = Math.sin(elapsed * 1.6) * 0.05;
@@ -1217,6 +1240,20 @@ export function launchOpsRoom({ container, brief, phaseNames, money, onComplete,
       const fadeIn = Math.min(1, (elapsed - bubble.start) / 0.25);
       bubble.sprite.material.opacity = life < 0.5 ? Math.max(0, life / 0.5) : fadeIn;
       if (life <= 0) removeBubble(b);
+    }
+
+    // Stabilise world-space UI. In a headset the target is fixed relative to
+    // the room, not the current head pose; desktop orbiting remains readable by
+    // facing the normal camera. Moving agent labels/bubbles can change position,
+    // but their orientation never chases the headset.
+    if (renderer.xr.isPresenting) {
+      uiAudienceWorld.copy(uiAudienceLocal);
+      world.localToWorld(uiAudienceWorld);
+    } else {
+      camera.getWorldPosition(uiAudienceWorld);
+    }
+    for (const panel of uiPanels) {
+      if (panel.visible && panel.parent) panel.lookAt(uiAudienceWorld);
     }
 
     // Agent-to-agent message pulses travel between the two talking robots.
