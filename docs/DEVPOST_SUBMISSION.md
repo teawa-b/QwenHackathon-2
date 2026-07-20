@@ -19,6 +19,12 @@ https://github.com/teawa-b/QwenHackathon-2
 **Public demo**  
 https://qwenhackathon-2-production.up.railway.app
 
+**Alibaba Cloud application**  
+https://supplyswarm.shroozy.com
+
+**Build journal**  
+https://supplyswarm.shroozy.com/journal/
+
 **Alibaba Cloud deployment proof**  
 https://github.com/teawa-b/QwenHackathon-2/blob/main/docs/ALIBABA_CLOUD_DEPLOYMENT.md
 
@@ -114,8 +120,8 @@ The strongest current captures are in the local `output/playwright/` folder:
 - [x] Architecture diagram and detailed architecture document
 - [x] Qwen Cloud API integration visible in public code
 - [x] Alibaba Cloud deployment code committed to the repository
-- [ ] Alibaba Cloud instance live and externally verified
-- [ ] Workbench/instance proof screenshot added to the repo
+- [x] Alibaba Cloud instance live and externally verified
+- [x] Workbench/instance proof screenshot added to the repo
 - [ ] Public video URL under three minutes
 - [ ] Devpost account signed in and hackathon registration completed
 - [ ] Devpost project fields and screenshots saved
