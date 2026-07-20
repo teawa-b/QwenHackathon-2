@@ -108,6 +108,13 @@ The strongest current captures are in the local `output/playwright/` folder:
 3. `live-vr-checkin-progress.png` — the completed, budget-valid plan inside the VR operations room.
 4. `live-vr-choice-picker.png` — Full autonomy versus Check in with me.
 
+Required judging evidence is in `docs/images/`:
+
+1. `supplyswarm-architecture.png` — clear system diagram connecting the clients, Alibaba Cloud deployment, Agent Society orchestrator and Qwen Cloud.
+2. `alibaba-workbench-proof.png` — running SupplySwarm and Caddy containers in Alibaba Workbench.
+3. `alibaba-server-overview.png` — running Singapore Simple Application Server and public IP.
+4. `cloudflare-supplyswarm-dns.png` — the public domain mapped to the Alibaba server IP.
+
 ## Final checklist
 
 - [x] Public GitHub repository
@@ -123,7 +130,10 @@ The strongest current captures are in the local `output/playwright/` folder:
 - [x] Alibaba Cloud instance live and externally verified
 - [x] Workbench/instance proof screenshot added to the repo
 - [x] Public video URL under three minutes
-- [ ] Devpost account signed in and hackathon registration completed
-- [ ] Devpost project fields and screenshots saved
+- [x] Devpost account signed in and hackathon registration completed
+- [x] Devpost project fields, video and screenshots saved
+- [x] Additional Info fields and required evidence files prepared in the Devpost draft
+- [ ] Legal eligibility attestations checked by Tiwa
+- [ ] Additional Info saved after Tiwa confirms the legal attestations
 - [ ] Final review by Tiwa
 - [ ] Final Devpost submission by Tiwa (Codex must not press submit)

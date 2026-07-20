@@ -2,6 +2,8 @@
 
 SupplySwarm is a multi-agent procurement system (**Track 3: Agent Society**). A user describes a business in one sentence (typed, or spoken to a 3D robot); a society of Qwen-powered agents decomposes the task, searches Alibaba.com live, negotiates over a shared budget, resolves conflicts, and returns an evidence-linked equipment package — measured against a single-agent control on every run.
 
+![SupplySwarm system architecture](images/supplyswarm-architecture.png)
+
 ## System overview
 
 ```mermaid
