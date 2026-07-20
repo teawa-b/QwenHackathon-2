@@ -136,7 +136,7 @@ export function showJournal(app) {
           <p>A short, honest record of turning a procurement idea into a visible society of Qwen agents — with live evidence, memory, negotiation, VR and an Alibaba Cloud deployment.</p>
           <dl>
             <div><dt>Timeline</dt><dd>3 build weeks</dd></div>
-            <div><dt>Public commits</dt><dd>35</dd></div>
+            <div><dt>Public commits</dt><dd>35+</dd></div>
             <div><dt>Track</dt><dd>Agent Society</dd></div>
           </dl>
         </div>
