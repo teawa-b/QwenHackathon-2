@@ -39,33 +39,17 @@ export function showConnect(app, prefillCode) {
   function renderEntry(error = '') {
     app.innerHTML = `${header('')}
     <main class="c-shell c-entry-shell">
-      <section class="c-pair c-pair-entry">
-        <div class="c-pair-copy">
-          <p class="c-kicker"><span></span> Live companion link</p>
-          <h1>Step into<br>the <em>swarm.</em></h1>
-          <p class="c-intro">Follow every sourcing agent from your phone. Challenge decisions, steer the budget, and collect the final launch plan while the 3D room stays in motion.</p>
-          <ol class="c-pair-steps" aria-label="How to connect">
-            <li><b>01</b><span>Open the <strong>3D Ops Room</strong> on the main display</span></li>
-            <li><b>02</b><span>Find the code beside <strong>Phone link</strong></span></li>
-            <li><b>03</b><span>Enter it here to join the live session</span></li>
-          </ol>
-        </div>
-        <div class="c-pair-panel">
-          <div class="c-panel-top"><span>SESSION HANDSHAKE</span><b><i></i> READY</b></div>
-          <div class="c-orb" aria-hidden="true"><i></i><i></i><i></i><b><span></span><span></span><span></span></b></div>
-          <div class="c-panel-copy">
-            <p class="c-code-label">Enter your 5-character code</p>
-            <p>Codes are temporary and only visible inside the active ops room.</p>
-          </div>
-          <form id="pair-form">
-            <input id="pair-code" inputmode="latin" autocomplete="one-time-code" autocapitalize="characters"
-                   spellcheck="false" maxlength="5" placeholder="-----" value="${esc(state.code)}" aria-label="Connect code">
-            <button type="submit"><span>Join session</span><b aria-hidden="true">↗</b></button>
-          </form>
-          <p class="c-error" ${error ? '' : 'hidden'}>${esc(error)}</p>
-          <div class="c-private"><span aria-hidden="true">◇</span><p><b>View and steer only.</b> No supplier is contacted and no purchase can be made from this companion.</p></div>
-        </div>
-        <p class="c-credit">Built by <a href="https://github.com/teawa-b" target="_blank" rel="noopener noreferrer">Tiwa Bakree / @teawa-b</a><span>Powered by Qwen and Alibaba Cloud</span></p>
+      <section class="c-pair c-pair-simple">
+        <p class="c-kicker"><span></span> Join session</p>
+        <h1>Enter your code</h1>
+        <p class="c-intro">Use the 5-character code shown beside <b>Phone link</b> in the 3D Ops Room.</p>
+        <form id="pair-form">
+          <input id="pair-code" inputmode="latin" autocomplete="one-time-code" autocapitalize="characters"
+                 spellcheck="false" maxlength="5" placeholder="-----" value="${esc(state.code)}" aria-label="Connect code">
+          <button type="submit"><span>Connect</span><b aria-hidden="true">→</b></button>
+        </form>
+        <p class="c-error" ${error ? '' : 'hidden'}>${esc(error)}</p>
+        <p class="c-hint">The session code expires when the ops room closes.</p>
       </section>
     </main>`;
     const input = app.querySelector('#pair-code');

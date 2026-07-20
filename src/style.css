@@ -651,6 +651,24 @@ body.connect-mode .results-card h2{font-family:var(--display);color:var(--paper)
   .c-pair-wait{padding:34px 20px}.c-shell{padding:18px}body.connect-mode .companion{padding:30px 15px 100px}body.connect-mode .c-head h1{font-size:29px}
 }
 
+/* The entry route is intentionally just a fast code handoff. */
+body.connect-mode .c-entry-shell{min-height:calc(100dvh - 74px);display:grid;place-items:center;padding:36px 20px}
+.c-pair-simple{width:min(430px,100%);margin:0;text-align:left;padding:0;animation:cRise .45s ease both}
+.c-pair-simple .c-kicker{margin-bottom:18px!important}
+.c-pair-simple h1{margin:0;color:var(--paper);font:500 clamp(42px,6vw,58px)/1 var(--display);letter-spacing:-.035em}
+.c-pair-simple .c-intro{max-width:390px!important;margin:18px 0 0!important;color:var(--muted)!important;font:400 14px/1.7 var(--body)!important}
+.c-pair-simple .c-intro b{color:#d5d2c9;font-weight:650}
+body.connect-mode .c-pair-simple #pair-form{display:grid;grid-template-columns:1fr;gap:10px;margin:32px 0 0;max-width:none}
+body.connect-mode .c-pair-simple #pair-code{height:76px;font-size:32px;letter-spacing:.42em;text-indent:.42em}
+body.connect-mode .c-pair-simple #pair-form button{height:56px;justify-content:space-between;padding-left:22px}
+.c-pair-simple .c-error{max-width:none!important;text-align:left;margin:13px 0 0!important;font-size:12px!important}
+.c-pair-simple .c-hint{max-width:none!important;text-align:left;margin:16px 0 0!important;color:var(--faint)!important;font-size:11px!important}
+@media(max-width:560px){
+  body.connect-mode .c-entry-shell{min-height:calc(100dvh - 64px);padding:30px 22px}
+  .c-pair-simple h1{font-size:44px}
+  body.connect-mode .c-pair-simple #pair-code{height:70px}
+}
+
 /* ---------- Landing background: oversized translucent glyphs ---------- */
 .landing{position:relative}
 .landing>*{position:relative;z-index:1}
