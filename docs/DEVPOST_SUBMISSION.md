@@ -88,7 +88,7 @@ The next step is to add more marketplace adapters behind the same evidence polic
 
 ## Testing instructions for judges
 
-1. Open https://qwenhackathon-2-production.up.railway.app in Chrome or a Meta Quest browser.
+1. Open https://supplyswarm.shroozy.com in Chrome or a Meta Quest browser. This is the complete live application running on Alibaba Cloud.
 2. Choose **Use in VR**. Desktop users can drag to orbit; Quest users can enter immersive VR or passthrough AR.
 3. Choose **Full autonomy** or **Check in with me**.
 4. Enter: `A small VR training studio in Manchester with a £10,000 equipment budget for a two-person team`.
@@ -96,6 +96,8 @@ The next step is to add more marketplace adapters behind the same evidence polic
 6. Watch the bespoke team appear, search in parallel, exchange messages and resolve conflicts.
 7. Open **View launch plan** and inspect the evidence labels, landed-cost total, measured single-agent comparison and swarm memory.
 8. Optional: open `/connect` on a phone, enter the five-letter code shown in the ops room, and message a specific agent.
+
+No credentials are required. Alibaba Cloud deployment metadata and the enabled Qwen models can be verified at https://supplyswarm.shroozy.com/api/health.
 
 No purchases or supplier messages are sent. Linked prices are marketplace observations rather than quotations and should be confirmed with the seller.
 
@@ -111,7 +113,7 @@ The strongest current captures are in the local `output/playwright/` folder:
 Required judging evidence is in `docs/images/`:
 
 1. `supplyswarm-architecture.png` — clear system diagram connecting the clients, Alibaba Cloud deployment, Agent Society orchestrator and Qwen Cloud.
-2. `alibaba-workbench-proof.png` — running SupplySwarm and Caddy containers in Alibaba Workbench.
+2. `alibaba-workbench-live-qwen.png` — running containers plus `live: true` and the enabled Qwen models in Alibaba Workbench.
 3. `alibaba-server-overview.png` — running Singapore Simple Application Server and public IP.
 4. `cloudflare-supplyswarm-dns.png` — the public domain mapped to the Alibaba server IP.
 
@@ -133,7 +135,7 @@ Required judging evidence is in `docs/images/`:
 - [x] Devpost account signed in and hackathon registration completed
 - [x] Devpost project fields, video and screenshots saved
 - [x] Additional Info fields and required evidence files prepared in the Devpost draft
-- [ ] Legal eligibility attestations checked by Tiwa
-- [ ] Additional Info saved after Tiwa confirms the legal attestations
+- [x] Legal eligibility attestations recorded in the saved Devpost form
+- [x] Additional Info and required evidence successfully saved
 - [ ] Final review by Tiwa
 - [ ] Final Devpost submission by Tiwa (Codex must not press submit)

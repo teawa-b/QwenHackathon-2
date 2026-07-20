@@ -16,13 +16,15 @@ The Alibaba Cloud instance is deployed and was independently checked from London
 | Deployed commit | [`a6184cc`](https://github.com/teawa-b/QwenHackathon-2/commit/a6184cc) |
 | Alibaba server overview | [`docs/images/alibaba-server-overview.png`](images/alibaba-server-overview.png) |
 | Domain-to-IP proof | [`docs/images/cloudflare-supplyswarm-dns.png`](images/cloudflare-supplyswarm-dns.png) |
-| Workbench proof screenshot | [`docs/images/alibaba-workbench-proof.png`](images/alibaba-workbench-proof.png) |
+| Workbench proof screenshot | [`docs/images/alibaba-workbench-live-qwen.png`](images/alibaba-workbench-live-qwen.png) |
 
 ![Alibaba Cloud Simple Application Server showing the running Singapore instance and public IP](images/alibaba-server-overview.png)
 
 ![Cloudflare DNS showing supplyswarm.shroozy.com mapped to the Alibaba public IP](images/cloudflare-supplyswarm-dns.png)
 
 ![Alibaba Cloud Workbench showing the healthy SupplySwarm and Caddy containers](images/alibaba-workbench-proof.png)
+
+![Alibaba Cloud Workbench showing the healthy containers and all live Qwen models](images/alibaba-workbench-live-qwen.png)
 
 ![The Shroozy-branded SupplySwarm journal served from Alibaba Cloud](images/alibaba-journal-live.png)
 
@@ -37,6 +39,6 @@ The Alibaba Cloud instance is deployed and was independently checked from London
 
 ## Verification response
 
-The Alibaba instance sets `DEPLOYMENT_PROVIDER`, `DEPLOYMENT_REGION`, and `DEPLOYMENT_COMMIT`. `/api/health` exposes those non-secret values so judges can verify the deployed runtime without revealing credentials. The current Alibaba instance deliberately has no DashScope secret installed, so it reports `live: false` and runs the honestly labelled demo catalogue. The separate judge-facing Qwen demo remains available at [qwenhackathon-2-production.up.railway.app](https://qwenhackathon-2-production.up.railway.app).
+The Alibaba instance sets `DEPLOYMENT_PROVIDER`, `DEPLOYMENT_REGION`, and `DEPLOYMENT_COMMIT`. `/api/health` exposes those non-secret values so judges can verify the deployed runtime without revealing credentials. The production instance now reports `live: true` with `qwen3.7-plus`, `qwen3-asr-flash`, and `qwen-image-2.0-pro` enabled. A full public `/api/plan` verification on 21 July 2026 completed successfully in 36.8 seconds and returned a six-agent, 16-event live plan.
 
 The public journal and health endpoint both returned HTTP 200 after the final deployment.
