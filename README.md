@@ -25,7 +25,7 @@ Opening the 3D Ops Room registers the session over WebSocket and shows a 5-lette
 
 ## Qwen Cloud live mode
 
-Set **`DASHSCOPE_API_KEY`** (Railway → your service → Variables) and the app switches from the demo catalogue to live Qwen Cloud:
+SupplySwarm's primary production deployment runs on Alibaba Cloud. Set **`DASHSCOPE_API_KEY`** only in the server-side deployment environment (`deploy/alibaba-cloud/.env`; never commit it) and the app switches from the demo catalogue to live Qwen Cloud:
 
 - **Planning** — a real multi-agent pipeline on `qwen3.7-plus`. The Coordinator call extracts the brief and designs the specialist team with per-agent Alibaba search queries and budget shares. Each specialist then runs its **own Qwen call with live web search enabled** (DashScope `enable_search` + `forced_search` + `enable_source`), in parallel, searching `site:alibaba.com` for its category. Any URL a specialist cites is validated against the actual search results it received — verified links are labelled "Live Alibaba listing"; unlinked lines are handed a real listing URL from the agent's own search results where one exists, anything else is labelled an estimate. A deterministic calculator (not the LLM) computes shipping, VAT/duties, contingency and the landed total; if the package breaks the budget, a genuine Critic revision round runs and messages the specific agents whose lines were changed; if it leaves most of the budget unused, an equivalent Critic upgrade round spends it properly. Every event carries `who → to`, so the swarm visibly talks to itself in the console and the 3D room.
 - **Voice input** — the mic button records your brief and transcribes it with `qwen3-asr-flash`.
@@ -50,9 +50,9 @@ The hackathon production bundle is live on **Alibaba Cloud Simple Application Se
 
 See [`deploy/alibaba-cloud/README.md`](deploy/alibaba-cloud/README.md) for the exact Workbench deployment and proof-capture steps.
 
-## Existing HTTPS demo (Railway)
+## Legacy fallback deployment (Railway)
 
-Railway auto-detects Node: build command `npm run build`, start command `npm start`. The Express server serves both the API and the built frontend on `PORT`. Set `DASHSCOPE_API_KEY` in service variables.
+A previous Railway fallback remains documented for development continuity. The submitted hackathon production deployment and testing URL are the Alibaba Cloud instance described above.
 
 ## Data honesty
 
