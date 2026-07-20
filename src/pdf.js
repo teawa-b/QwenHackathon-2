@@ -93,12 +93,19 @@ export async function buildPlanPdf(plan, brief, imageUrl) {
     try {
       const dataUrl = await fetchImageDataUrl(imageUrl);
       const props = doc.getImageProperties(dataUrl);
-      const width = CW;
-      const height = Math.min(235, (props.height / props.width) * width);
+      // Fit the image inside a CW × 235 box while preserving its aspect ratio,
+      // then centre it — clamping height alone (with width pinned to CW) was
+      // squashing tall/square concept images into a stretched band.
+      const maxW = CW, maxH = 235;
+      const ar = (props.width || 1) / (props.height || 1);
+      let width = maxW;
+      let height = width / ar;
+      if (height > maxH) { height = maxH; width = height * ar; }
+      const x = M + (CW - width) / 2;
       ensureRoom(height + 30);
       doc.setDrawColor(...HAIR); doc.setLineWidth(1);
-      doc.roundedRect(M - 4, y - 4, width + 8, height + 8, 6, 6, 'S');
-      doc.addImage(dataUrl, M, y, width, height, undefined, 'FAST');
+      doc.roundedRect(x - 4, y - 4, width + 8, height + 8, 6, 6, 'S');
+      doc.addImage(dataUrl, x, y, width, height, undefined, 'FAST');
       doc.setFont('helvetica', 'italic').setFontSize(7.5).setTextColor(...FAINT);
       doc.text('AI concept visual of the finished space — illustrative only, not a floor plan.', M, y + height + 16);
       y += height + 30;
